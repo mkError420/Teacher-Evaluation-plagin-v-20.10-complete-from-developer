@@ -14,7 +14,7 @@ Teacher Evaluation Survey is a comprehensive WordPress plugin designed to facili
 ### 🎓 Admin Management
 *   **Teacher Management:** 
     *   Add, edit, and delete teacher profiles.
-    *   **CSV Import:** Bulk import teachers from CSV files.
+    *   **CSV Import/Export:** Bulk import teachers from CSV files and export selected lists.
     *   **Bulk Delete:** Delete multiple teachers at once.
     *   **Search & Filter:** Advanced search with autocomplete for quick access. Filter by Phase and Class.
     *   **Date Tracking:** View creation date for teacher profiles.
@@ -23,10 +23,10 @@ Teacher Evaluation Survey is a comprehensive WordPress plugin designed to facili
 *   **Supervisor Management:**
     *   Dedicated management for Advisors/Supervisors.
     *   **Date Tracking:** View creation date for supervisor profiles.
-    *   Assign specific roles, designations, and credentials.
+    *   Assign specific roles, designations, credentials, **Phase**, and **Class**.
 *   **Student Management:** 
     *   Add and manage student profiles with extended details (Session, Batch, Phase, Roll, Class).
-    *   **CSV Import:** Bulk import students from CSV files.
+    *   **CSV Import/Export:** Bulk import students from CSV files and export selected lists.
     *   **Auto-Credentials:** Automatically sets `Username` and `Password` (often Roll number) for simplified onboarding.
     *   Searchable student database with bulk delete options. Filter by Phase and Class.
 *   **Survey Builder:** 
@@ -60,6 +60,7 @@ Teacher Evaluation Survey is a comprehensive WordPress plugin designed to facili
 *   **Advisor Dashboard:**
     *   Secure login for advisors (`[advisor_dashboard]`).
     *   Access to all survey results.
+    *   **Enhanced Lists:** View Survey Phase and Class details directly in the dashboard list.
     *   **PDF Export:** Download comprehensive survey results as PDF reports.
         *   **Formatted Layout:** One question per page with charts and tables.
         *   **Custom Header:** Includes college branding and survey details.
