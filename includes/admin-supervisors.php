@@ -140,6 +140,8 @@ function tes_supervisors_page() {
                 <tr>
                     <th>Name</th>
                     <th>Department</th>
+                    <th>Phase</th>
+                    <th>Class</th>
                     <th>Username</th>
                     <th>Password</th>
                     <th>Date</th>
@@ -151,6 +153,8 @@ function tes_supervisors_page() {
                     <tr>
                         <td><?php echo esc_html($s->name); ?></td>
                         <td><?php echo esc_html($s->department); ?></td>
+                        <td><?php echo esc_html($s->phase); ?></td>
+                        <td><?php echo esc_html($s->class_name); ?></td>
                         <td><?php echo esc_html($s->username); ?></td>
                         <td><?php echo esc_html($s->password); ?></td>
                         <td><?php echo esc_html(date('F j, Y', strtotime($s->created_at))); ?></td>
@@ -160,7 +164,7 @@ function tes_supervisors_page() {
                         </td>
                     </tr>
                 <?php endforeach; else: ?>
-                    <tr><td colspan="6">No supervisors found.</td></tr>
+                    <tr><td colspan="8">No supervisors found.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
