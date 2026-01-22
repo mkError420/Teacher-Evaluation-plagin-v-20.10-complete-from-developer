@@ -118,7 +118,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
     $all_teachers = $wpdb->get_results("SELECT id, name, department FROM $teachers_table WHERE (role != 'advisor' OR role IS NULL) ORDER BY name ASC");
 
     // Get all surveys for dropdown (and list)
-    $surveys_query = "SELECT s.*, t.name as teacher_name, t.department 
+    $surveys_query = "SELECT s.*, t.name as teacher_name, t.department, t.phase, t.class_name 
                       FROM $surveys_table s 
                       LEFT JOIN $teachers_table t ON s.teacher_id = t.id";
     
@@ -198,6 +198,8 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                             <th style="text-align:left; padding: 10px; border-bottom: 2px solid #ddd;">Survey Title</th>
                             <th style="text-align:left; padding: 10px; border-bottom: 2px solid #ddd;">Teacher</th>
                             <th style="text-align:left; padding: 10px; border-bottom: 2px solid #ddd;">Department</th>
+                            <th style="text-align:left; padding: 10px; border-bottom: 2px solid #ddd;">Phase</th>
+                            <th style="text-align:left; padding: 10px; border-bottom: 2px solid #ddd;">Class</th>
                             <th style="text-align:left; padding: 10px; border-bottom: 2px solid #ddd;">Score</th>
                             <th style="text-align:left; padding: 10px; border-bottom: 2px solid #ddd;">Actions</th>
                         </tr>
@@ -268,6 +270,8 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                 <td style="padding: 10px;"><?php echo esc_html($survey->title); ?></td>
                                 <td style="padding: 10px;"><?php echo esc_html($survey->teacher_name); ?></td>
                                 <td style="padding: 10px;"><?php echo esc_html($survey->department); ?></td>
+                                <td style="padding: 10px;"><?php echo esc_html($survey->phase); ?></td>
+                                <td style="padding: 10px;"><?php echo esc_html($survey->class_name); ?></td>
                                 <td style="padding: 10px;">
                                     <?php echo $total_score_count > 0 ? number_format($avg_score, 2) . ' / 5' : 'No Data'; ?>
                                 </td>
@@ -276,7 +280,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                 </td>
                             </tr>
                         <?php endforeach; else: ?>
-                            <tr><td colspan="4" style="padding: 15px; text-align: center;">No surveys found matching your criteria.</td></tr>
+                            <tr><td colspan="7" style="padding: 15px; text-align: center;">No surveys found matching your criteria.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -299,7 +303,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
             </div>
             <div id="tes-pdf-content" style="padding: 20px; background: #fff; box-sizing: border-box;">
                 <h2 style="text-align: center;background: #0c273d; color: #fff; padding: 10px 0;margin-top: 0; margin-bottom: 15px;">Rangpur Community Medical College Hospital (RCMCH)</h2>
-                <h3 style="text-align: center; margin-top: 0; margin-bottom: 18px; background: #42525f; color: #fff;">Category of The Medical College:  Non govt</h3>
+                <h3 style="text-align: center; margin-top: 0; margin-bottom: 15px; background: #42525f; color: #fff;">Category of The Medical College:  Non govt</h3>
                 <h2 style="margin-top: 0;"><?php echo esc_html($survey_details->title); ?> - Results</h2>
                 <p><strong>Date:</strong> <?php echo date('F j, Y'); ?></p>
         <?php
@@ -452,7 +456,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                         }
                         $current_q_count++;
                         ?>
-                        <div class="tes-question-container" style="margin-bottom:25px; padding:15px; border:1px solid #ddd; background: #fff; width: 100%; box-sizing: border-box; page-break-inside: avoid; page-break-after: always;">
+                        <div class="tes-question-container" style="margin-bottom:15px; padding:15px; border:1px solid #ddd; background: #fff; width: 100%; box-sizing: border-box; page-break-inside: avoid; page-break-after: always;">
                             <strong style="font-size: 1.1em;"><?php echo esc_html($q->sub_question_title ? $q->sub_question_title : $q->question_text); ?></strong>
                             <?php if ($q->sub_question_title && $q->question_text && $q->sub_question_title !== $q->question_text): ?>
                                 <div style="font-size: 0.9em; color: #666; margin-top: 5px; font-style: italic;"><?php echo esc_html($q->question_text); ?></div>
