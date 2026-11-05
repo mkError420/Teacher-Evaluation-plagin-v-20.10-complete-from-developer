@@ -1,28 +1,173 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
+function tes_email_verification_enabled() {
+    return get_option('tes_student_email_verification_enabled', '0') === '1';
+}
+
+function tes_student_verification_transient_key($token) {
+    return 'tes_student_verify_' . hash('sha256', $token);
+}
+
+function tes_set_student_login_cookie($student_id) {
+    $value = absint($student_id) . '.' . hash_hmac('sha256', (string) absint($student_id), wp_salt('auth'));
+    setcookie('tes_student_id', $value, time() + DAY_IN_SECONDS, COOKIEPATH ?: '/', COOKIE_DOMAIN, is_ssl(), true);
+    $_COOKIE['tes_student_id'] = $value;
+}
+
+function tes_get_student_login_id() {
+    if (empty($_COOKIE['tes_student_id']) || !is_string($_COOKIE['tes_student_id'])) {
+        return 0;
+    }
+
+    $cookie_parts = explode('.', sanitize_text_field(wp_unslash($_COOKIE['tes_student_id'])), 2);
+    if (count($cookie_parts) !== 2 || !ctype_digit($cookie_parts[0])) {
+        return 0;
+    }
+
+    $student_id = absint($cookie_parts[0]);
+    $expected_signature = hash_hmac('sha256', (string) $student_id, wp_salt('auth'));
+    return hash_equals($expected_signature, $cookie_parts[1]) ? $student_id : 0;
+}
+
+function tes_clear_student_cookie($cookie_name) {
+    setcookie($cookie_name, '', time() - HOUR_IN_SECONDS, COOKIEPATH ?: '/', COOKIE_DOMAIN, is_ssl(), true);
+    unset($_COOKIE[$cookie_name]);
+}
+
 function tes_handle_student_auth() {
     if (is_admin()) return;
 
-    if (isset($_POST['tes_student_login']) && isset($_POST['username']) && isset($_POST['password'])) {
+    if (isset($_POST['tes_student_login'])) {
         global $wpdb;
-        $username = sanitize_text_field($_POST['username']);
-        $password = $_POST['password'];
+        if (
+            !isset($_POST['tes_login_nonce']) || !is_string($_POST['tes_login_nonce'])
+            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['tes_login_nonce'])), 'tes_student_login')
+        ) {
+            wp_die('Security check failed. Please reload the page and try again.');
+        }
+
+        if (
+            !isset($_POST['username'], $_POST['password'])
+            || !is_string($_POST['username']) || !is_string($_POST['password'])
+        ) {
+            wp_safe_redirect(add_query_arg('tes_login_error', '1'));
+            exit;
+        }
+
+        $username = sanitize_text_field(wp_unslash($_POST['username']));
+        $password = wp_unslash($_POST['password']);
         $student = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}tes_students WHERE username = %s", $username));
 
         if ($student && (wp_check_password($password, $student->password) || $password === $student->password)) {
-            setcookie('tes_student_id', $student->id, time() + 86400, COOKIEPATH, COOKIE_DOMAIN);
-            wp_redirect(remove_query_arg('tes_login_error'));
+            if (tes_email_verification_enabled()) {
+                if (empty($student->email) || !is_email($student->email)) {
+                    wp_safe_redirect(add_query_arg('tes_login_notice', 'email_missing', remove_query_arg(['tes_login_error', 'tes_login_notice', 'tes_verify', 'tes_verify_error'])));
+                    exit;
+                }
+
+                $cooldown_key = 'tes_student_mail_cooldown_' . absint($student->id);
+                $existing_token = isset($_COOKIE['tes_student_verification']) && is_string($_COOKIE['tes_student_verification'])
+                    ? sanitize_text_field(wp_unslash($_COOKIE['tes_student_verification']))
+                    : '';
+                $existing_challenge = $existing_token ? get_transient(tes_student_verification_transient_key($existing_token)) : false;
+                if (get_transient($cooldown_key) && $existing_challenge && (int) $existing_challenge['student_id'] === (int) $student->id) {
+                    wp_safe_redirect(add_query_arg('tes_verify', '1', remove_query_arg(['tes_login_error', 'tes_login_notice', 'tes_verify_error'])));
+                    exit;
+                }
+                if (get_transient($cooldown_key)) {
+                    wp_safe_redirect(add_query_arg('tes_login_notice', 'send_wait', remove_query_arg(['tes_login_error', 'tes_login_notice', 'tes_verify', 'tes_verify_error'])));
+                    exit;
+                }
+
+                $verification_code = sprintf('%06d', wp_rand(0, 999999));
+                $verification_token = wp_generate_password(48, false, false);
+                $challenge = [
+                    'student_id' => (int) $student->id,
+                    'code_hash' => wp_hash_password($verification_code),
+                    'attempts' => 0,
+                    'expires_at' => time() + 10 * MINUTE_IN_SECONDS,
+                ];
+                $challenge_key = tes_student_verification_transient_key($verification_token);
+                set_transient($challenge_key, $challenge, 10 * MINUTE_IN_SECONDS);
+                setcookie('tes_student_verification', $verification_token, time() + 10 * MINUTE_IN_SECONDS, COOKIEPATH ?: '/', COOKIE_DOMAIN, is_ssl(), true);
+                $_COOKIE['tes_student_verification'] = $verification_token;
+
+                $subject = sprintf('[%s] Student login verification code', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
+                $message = "Your student login verification code is: {$verification_code}\n\nThis code expires in 10 minutes. If you did not request it, you can ignore this email.";
+                if (!wp_mail($student->email, $subject, $message)) {
+                    delete_transient($challenge_key);
+                    tes_clear_student_cookie('tes_student_verification');
+                    wp_safe_redirect(add_query_arg('tes_login_notice', 'email_failed', remove_query_arg(['tes_login_error', 'tes_login_notice', 'tes_verify', 'tes_verify_error'])));
+                    exit;
+                }
+
+                set_transient($cooldown_key, 1, MINUTE_IN_SECONDS);
+                wp_safe_redirect(add_query_arg('tes_verify', '1', remove_query_arg(['tes_login_error', 'tes_login_notice', 'tes_verify_error'])));
+                exit;
+            }
+
+            tes_set_student_login_cookie($student->id);
+            wp_safe_redirect(remove_query_arg(['tes_login_error', 'tes_login_notice', 'tes_verify', 'tes_verify_error']));
             exit;
         } else {
-            wp_redirect(add_query_arg('tes_login_error', '1'));
+            wp_safe_redirect(add_query_arg('tes_login_error', '1', remove_query_arg(['tes_login_notice', 'tes_verify', 'tes_verify_error'])));
             exit;
         }
     }
 
+    if (isset($_POST['tes_student_verify'])) {
+        if (!tes_email_verification_enabled()) {
+            wp_safe_redirect(remove_query_arg(['tes_verify', 'tes_verify_error']));
+            exit;
+        }
+
+        $token = isset($_COOKIE['tes_student_verification']) && is_string($_COOKIE['tes_student_verification'])
+            ? sanitize_text_field(wp_unslash($_COOKIE['tes_student_verification']))
+            : '';
+        $challenge = $token ? get_transient(tes_student_verification_transient_key($token)) : false;
+        if (
+            !$challenge || !isset($_POST['tes_verify_nonce']) || !is_string($_POST['tes_verify_nonce'])
+            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['tes_verify_nonce'])), 'tes_student_verify_' . $token)
+        ) {
+            wp_safe_redirect(add_query_arg(['tes_verify' => '1', 'tes_verify_error' => 'expired']));
+            exit;
+        }
+
+        if ((int) $challenge['expires_at'] < time() || (int) $challenge['attempts'] >= 5) {
+            delete_transient(tes_student_verification_transient_key($token));
+            tes_clear_student_cookie('tes_student_verification');
+            wp_safe_redirect(add_query_arg(['tes_verify' => '1', 'tes_verify_error' => 'expired']));
+            exit;
+        }
+
+        $code = isset($_POST['verification_code']) && is_string($_POST['verification_code'])
+            ? preg_replace('/\D/', '', wp_unslash($_POST['verification_code']))
+            : '';
+        if (!preg_match('/^\d{6}$/', $code) || !wp_check_password($code, $challenge['code_hash'])) {
+            $challenge['attempts']++;
+            set_transient(tes_student_verification_transient_key($token), $challenge, max(1, (int) $challenge['expires_at'] - time()));
+            wp_safe_redirect(add_query_arg(['tes_verify' => '1', 'tes_verify_error' => 'invalid']));
+            exit;
+        }
+
+        delete_transient(tes_student_verification_transient_key($token));
+        tes_clear_student_cookie('tes_student_verification');
+        tes_set_student_login_cookie($challenge['student_id']);
+        wp_safe_redirect(remove_query_arg(['tes_login_error', 'tes_login_notice', 'tes_verify', 'tes_verify_error']));
+        exit;
+    }
+
     if (isset($_GET['tes_action']) && $_GET['tes_action'] === 'logout') {
-        setcookie('tes_student_id', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN);
-        wp_redirect(remove_query_arg('tes_action'));
+        if (
+            !isset($_GET['_wpnonce']) || !is_string($_GET['_wpnonce'])
+            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])), 'tes_student_logout')
+        ) {
+            wp_die('Security check failed. Please reload the page and try again.');
+        }
+        tes_clear_student_cookie('tes_student_id');
+        tes_clear_student_cookie('tes_student_verification');
+        wp_safe_redirect(remove_query_arg(['tes_action', '_wpnonce']));
         exit;
     }
 }
@@ -31,7 +176,7 @@ add_action('init', 'tes_handle_student_auth');
 function tes_student_survey_shortcode() {
     global $wpdb;
 
-    $student_id = isset($_COOKIE['tes_student_id']) ? intval($_COOKIE['tes_student_id']) : 0;
+    $student_id = tes_get_student_login_id();
     $current_student = null;
     if ($student_id) {
         $current_student = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
@@ -42,6 +187,9 @@ function tes_student_survey_shortcode() {
 
     if (!$student_id) {
         $error = isset($_GET['tes_login_error']);
+        $verification_pending = tes_email_verification_enabled() && isset($_GET['tes_verify']);
+        $login_notice = isset($_GET['tes_login_notice']) ? sanitize_key(wp_unslash($_GET['tes_login_notice'])) : '';
+        $verification_error = isset($_GET['tes_verify_error']) ? sanitize_key(wp_unslash($_GET['tes_verify_error'])) : '';
         ?>
         <style>
             body {
@@ -62,11 +210,44 @@ function tes_student_survey_shortcode() {
             }
         </style>
         <div class="tes-login-wrapper" style="max-width: 400px; margin: 40px auto; padding: 30px; background: #424242; /* Gray Box */ border-radius: 10px; box-shadow: 0 0 20px rgba(255,255,255,0.1); font-family: sans-serif;">
-            <h2 style="text-align: center; margin-bottom: 20px; color: #fff;">Student Login</h2>
+            <h2 style="text-align: center; margin-bottom: 20px; color: #fff;"><?php echo $verification_pending ? 'Verify Your Email' : 'Student Login'; ?></h2>
             <?php if ($error): ?>
                 <div style="background: #ffebee; color: #c62828; padding: 12px; border-radius: 4px; margin-bottom: 20px; text-align: center; border: 1px solid #ef9a9a;">Invalid username or password.</div>
             <?php endif; ?>
+            <?php
+            $login_notices = [
+                'email_missing' => 'Your student account does not have a valid email address. Please contact the administrator.',
+                'email_failed' => 'The verification email could not be sent. Please try again later or contact the administrator.',
+                'send_wait' => 'A verification code was recently sent. Please wait one minute before requesting another.',
+            ];
+            if (isset($login_notices[$login_notice])) :
+            ?>
+                <div style="background: #ffebee; color: #c62828; padding: 12px; border-radius: 4px; margin-bottom: 20px; text-align: center; border: 1px solid #ef9a9a;"><?php echo esc_html($login_notices[$login_notice]); ?></div>
+            <?php endif; ?>
+            <?php if ($verification_pending): ?>
+                <?php if ($verification_error === 'invalid'): ?>
+                    <div style="background: #ffebee; color: #c62828; padding: 12px; border-radius: 4px; margin-bottom: 20px; text-align: center; border: 1px solid #ef9a9a;">That code is incorrect. You have a maximum of five attempts.</div>
+                <?php elseif ($verification_error === 'expired'): ?>
+                    <div style="background: #ffebee; color: #c62828; padding: 12px; border-radius: 4px; margin-bottom: 20px; text-align: center; border: 1px solid #ef9a9a;">This verification request expired. Please sign in again to request a new code.</div>
+                <?php endif; ?>
+                <p style="color: #fff; text-align: center;">Enter the six-digit code sent to your student email address.</p>
+                <form method="post">
+                    <input type="hidden" name="tes_verify_nonce" value="<?php
+                        $verification_token = isset($_COOKIE['tes_student_verification']) && is_string($_COOKIE['tes_student_verification'])
+                            ? sanitize_text_field(wp_unslash($_COOKIE['tes_student_verification']))
+                            : '';
+                        echo esc_attr(wp_create_nonce('tes_student_verify_' . $verification_token));
+                    ?>">
+                    <div style="margin-bottom: 20px;">
+                        <label for="tes_verification_code" style="display: block; margin-bottom: 8px; font-weight: 600; color: #fff;">Verification code</label>
+                        <input type="text" name="verification_code" id="tes_verification_code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" style="width: 100%; padding: 12px; border: 1px solid #757575; border-radius: 4px; box-sizing: border-box; font-size: 16px; background: #616161; color: #fff;">
+                    </div>
+                    <button type="submit" name="tes_student_verify" value="1" class="tes-login-btn" style="width: 100%; padding: 12px; background: #333; color: white; border: 1px solid #555; border-radius: 6px; font-size: 16px; font-weight: bold; text-transform: uppercase; cursor: pointer;">Verify and Login</button>
+                </form>
+                <p style="text-align: center; margin-top: 15px;"><a href="<?php echo esc_url(remove_query_arg(['tes_verify', 'tes_verify_error'])); ?>" style="color: #fff;">Return to Student Login</a></p>
+            <?php else: ?>
             <form method="post">
+                <?php wp_nonce_field('tes_student_login', 'tes_login_nonce'); ?>
                 <div style="margin-bottom: 20px;">
                     <label for="tes_username" style="display: block; margin-bottom: 8px; font-weight: 600; color: #fff;">Username</label>
                     <input type="text" name="username" id="tes_username" required placeholder="Username" style="width: 100%; padding: 12px; border: 1px solid #757575; border-radius: 4px; box-sizing: border-box; font-size: 16px; background: #616161; color: #fff;">
@@ -80,6 +261,7 @@ function tes_student_survey_shortcode() {
                 </div>
                 <button type="submit" name="tes_student_login" value="1" class="tes-login-btn" style="width: 100%; padding: 12px; background: #333; color: white; border: 1px solid #555; border-radius: 6px; font-size: 16px; font-weight: bold; text-transform: uppercase; cursor: pointer; transition: all 0.3s;">Login</button>
             </form>
+            <?php endif; ?>
             <div style="text-align: center; margin-top: 15px; color: #ccc; font-size: 12px;">Developed by IT Department (Rangpur Group)-2026</div>
         </div>
         <script>
@@ -158,7 +340,7 @@ function tes_student_survey_shortcode() {
                 <div>Logged in as: <strong><?php echo esc_html($current_student->student_name); ?></strong></div>
                 <div style="font-size: 0.9em; color: #555; margin-top: 2px;"><?php echo esc_html($current_student->class_name); ?><?php if (!empty($current_student->phase)) echo ' - ' . esc_html($current_student->phase); ?></div>
             </div>
-            <a href="?tes_action=logout" style="color: #dc3545; text-decoration: none; font-weight: bold; font-size: 14px;">Logout</a>
+            <a href="<?php echo esc_url(wp_nonce_url(add_query_arg('tes_action', 'logout'), 'tes_student_logout')); ?>" style="color: #dc3545; text-decoration: none; font-weight: bold; font-size: 14px;">Logout</a>
         </div>
 
     <div class="tes-survey-form" style="background: #fff; padding: 30px; border: 1px solid #e5e5e5; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin: 20px auto; max-width: 800px;">

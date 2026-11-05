@@ -86,7 +86,7 @@ add_action('wp_ajax_nopriv_tes_teacher_search_autocomplete', 'tes_teacher_search
 add_action('wp_ajax_tes_question_search_autocomplete', 'tes_question_search_autocomplete');
 
 // Database update: Ensure student_id column exists
-add_action('init', 'tes_update_db_schema');
+add_action('init', 'tes_update_db_schema', 1);
 function tes_update_db_schema() {
     global $wpdb;
     $table_name = $wpdb->prefix . 'tes_submissions';
@@ -105,6 +105,9 @@ function tes_update_db_schema() {
             if (empty($wpdb->get_results("SHOW COLUMNS FROM $students_table LIKE '$col'"))) {
                 $wpdb->query("ALTER TABLE $students_table ADD COLUMN $col VARCHAR(100) NULL");
             }
+        }
+        if (empty($wpdb->get_results("SHOW COLUMNS FROM $students_table LIKE 'email'"))) {
+            $wpdb->query("ALTER TABLE $students_table ADD COLUMN email VARCHAR(254) NULL");
         }
     }
 
@@ -437,7 +440,7 @@ function tes_import_students() {
         return strtolower(str_replace(' ', '_', $h));
     }, $headers);
 
-    $allowed_cols = ['first_name', 'last_name', 'student_name', 'username', 'class_name', 'session', 'batch_name', 'phase', 'roll'];
+    $allowed_cols = ['first_name', 'last_name', 'student_name', 'username', 'email', 'class_name', 'session', 'batch_name', 'phase', 'roll'];
     $col_indexes = [];
 
     foreach ($headers as $index => $header) {
@@ -451,15 +454,24 @@ function tes_import_students() {
     }
 
     $imported = 0;
+    $skipped_missing_email = 0;
     while (($data = fgetcsv($handle)) !== false) {
         $insert_data = [];
         foreach ($col_indexes as $col => $index) {
             if (isset($data[$index])) {
-                $insert_data[$col] = sanitize_text_field($data[$index]);
+                $insert_data[$col] = $col === 'email' ? sanitize_email($data[$index]) : sanitize_text_field($data[$index]);
             }
         }
 
         if (!empty($insert_data)) {
+            if (
+                tes_email_verification_enabled()
+                && (empty($insert_data['email']) || !is_email($insert_data['email']))
+            ) {
+                $skipped_missing_email++;
+                continue;
+            }
+
             if (isset($insert_data['first_name']) || isset($insert_data['last_name'])) {
                 $fname = isset($insert_data['first_name']) ? $insert_data['first_name'] : '';
                 $lname = isset($insert_data['last_name']) ? $insert_data['last_name'] : '';
@@ -486,7 +498,11 @@ function tes_import_students() {
     }
 
     fclose($handle);
-    wp_send_json_success("Successfully imported $imported students.");
+    $message = "Successfully imported $imported students.";
+    if ($skipped_missing_email > 0) {
+        $message .= " Skipped $skipped_missing_email rows because they did not include a valid email address.";
+    }
+    wp_send_json_success($message);
 }
 
 function tes_import_teachers() {

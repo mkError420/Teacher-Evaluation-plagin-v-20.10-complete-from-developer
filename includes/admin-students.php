@@ -36,13 +36,27 @@ function tes_students_page() {
         $batch_name = sanitize_text_field($_POST['batch_name']);
         $phase = sanitize_text_field($_POST['phase']);
         $roll = sanitize_text_field($_POST['roll']);
+        $email_input = isset($_POST['email']) && is_string($_POST['email']) ? wp_unslash($_POST['email']) : '';
+        $email = sanitize_email($email_input);
+        $email_invalid = $email_input !== '' && !is_email($email);
+        $email_required = tes_email_verification_enabled() && $email === '';
 
         // Auto-set Username and Password from Name and Roll
         $password = $roll;
 
         // Validate
-        if (empty($student_name) || empty($class_name) || empty($roll)) {
-            echo '<div class="notice notice-error"><p>Student Name, Class and Roll are required.</p></div>';
+        if (
+            empty($student_name) || empty($class_name) || empty($roll)
+            || $email_invalid || $email_required
+        ) {
+            if (empty($student_name) || empty($class_name) || empty($roll)) {
+                echo '<div class="notice notice-error"><p>Student Name, Class and Roll are required.</p></div>';
+            }
+            if ($email_required) {
+                echo '<div class="notice notice-error"><p>A valid student email is required while email verification is enabled.</p></div>';
+            } elseif ($email_invalid) {
+                echo '<div class="notice notice-error"><p>Please enter a valid student email address.</p></div>';
+            }
         } else {
             // Check if username exists
             $existing = $wpdb->get_row($wpdb->prepare("SELECT id FROM $students_table WHERE username = %s", $username));
@@ -63,13 +77,14 @@ function tes_students_page() {
                         'student_name' => $student_name,
                         'username' => $username,
                         'password' => $hashed_password,
+                        'email' => $email,
                         'class_name' => $class_name,
                         'session' => $session,
                         'batch_name' => $batch_name,
                         'phase' => $phase,
                         'roll' => $roll
                     ],
-                    ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
+                    ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
                 );
 
                 if ($result) {
@@ -99,9 +114,23 @@ function tes_students_page() {
         $batch_name = sanitize_text_field($_POST['batch_name']);
         $phase = sanitize_text_field($_POST['phase']);
         $roll = sanitize_text_field($_POST['roll']);
+        $email_input = isset($_POST['email']) && is_string($_POST['email']) ? wp_unslash($_POST['email']) : '';
+        $email = sanitize_email($email_input);
+        $email_invalid = $email_input !== '' && !is_email($email);
+        $email_required = tes_email_verification_enabled() && $email === '';
 
-        if (empty($student_name) || empty($username) || empty($class_name)) {
-            echo '<div class="notice notice-error"><p>Name, Username and Class are required.</p></div>';
+        if (
+            empty($student_name) || empty($username) || empty($class_name)
+            || $email_invalid || $email_required
+        ) {
+            if (empty($student_name) || empty($username) || empty($class_name)) {
+                echo '<div class="notice notice-error"><p>Name, Username and Class are required.</p></div>';
+            }
+            if ($email_required) {
+                echo '<div class="notice notice-error"><p>A valid student email is required while email verification is enabled.</p></div>';
+            } elseif ($email_invalid) {
+                echo '<div class="notice notice-error"><p>Please enter a valid student email address.</p></div>';
+            }
         } else {
             // Check if username exists for other students
             $existing = $wpdb->get_row($wpdb->prepare("SELECT id FROM $students_table WHERE username = %s AND id != %d", $username, $student_id));
@@ -111,6 +140,7 @@ function tes_students_page() {
                 $data = [
                     'student_name' => $student_name,
                     'username' => $username,
+                    'email' => $email,
                     'class_name' => $class_name,
                     'session' => $session,
                     'batch_name' => $batch_name,
@@ -274,6 +304,12 @@ function tes_students_page() {
                     </div>
                     <?php endif; ?>
 
+                    <div class="tes-form-group">
+                        <label for="email">Email <?php echo tes_email_verification_enabled() ? '*' : ''; ?></label>
+                        <input type="email" id="email" name="email" <?php echo tes_email_verification_enabled() ? 'required' : ''; ?>
+                               value="<?php echo $edit_student ? esc_attr($edit_student->email) : ''; ?>">
+                    </div>
+
                     <?php if ($edit_student): ?>
                     <div class="tes-form-group">
                         <label for="username">Username *</label>
@@ -365,7 +401,7 @@ function tes_students_page() {
             <h3>Import Students from CSV</h3>
             <p class="description">
                 Upload a CSV file with headers matching the database columns.<br>
-                <strong>Allowed Columns:</strong> first_name, last_name, class_name, session, batch_name, phase, roll.
+                <strong>Allowed Columns:</strong> first_name, last_name, email, class_name, session, batch_name, phase, roll.
             </p>
             
             <form id="tes-import-form" enctype="multipart/form-data">
@@ -424,6 +460,7 @@ function tes_students_page() {
                             <td id="cb" class="manage-column column-cb check-column"><input type="checkbox" id="cb-select-all-1"></td>
                             <th>Student Name</th>
                             <th>Username</th>
+                            <th>Email</th>
                             <th>Password</th>
                             <th>Class</th>
                             <th>Session</th>
@@ -440,6 +477,7 @@ function tes_students_page() {
                                 <th scope="row" class="check-column"><input type="checkbox" name="student_ids[]" value="<?php echo esc_attr($student->id); ?>"></th>
                                 <td><?php echo esc_html($student->student_name); ?></td>
                                 <td><code><?php echo esc_html($student->username); ?></code></td>
+                                <td><?php echo esc_html($student->email); ?></td>
                                 <td><code><?php echo (strpos($student->password, '$P$') === 0 || strpos($student->password, '$H$') === 0) ? '(Hidden/Hashed)' : esc_html($student->password); ?></code></td>
                                 <td><?php echo esc_html($student->class_name); ?></td>
                                 <td><?php echo esc_html($student->session); ?></td>
@@ -502,8 +540,7 @@ function tes_students_page() {
     jQuery(document).ready(function($) {
         $('#tes-download-students-csv').on('click', function() {
             var csv = [];
-            // Header
-            var header = ["Student Name", "Username", "Password", "Class", "Session", "Batch", "Phase", "Roll"];
+            var header = ["Student Name", "Username", "Email", "Password", "Class", "Session", "Batch", "Phase", "Roll"];
             csv.push(header.join(","));
 
             // Rows
@@ -516,15 +553,11 @@ function tes_students_page() {
                     // Get cells (td) - skipping the first th (checkbox)
                     var $cells = $row.find('td');
                     
-                    // Extract text and handle CSV escaping
-                    rowData.push('"' + $cells.eq(0).text().trim().replace(/"/g, '""') + '"'); // Name
-                    rowData.push('"' + $cells.eq(1).text().trim().replace(/"/g, '""') + '"'); // Username
-                    rowData.push('"' + $cells.eq(2).text().trim().replace(/"/g, '""') + '"'); // Password
-                    rowData.push('"' + $cells.eq(3).text().trim().replace(/"/g, '""') + '"'); // Class
-                    rowData.push('"' + $cells.eq(4).text().trim().replace(/"/g, '""') + '"'); // Session
-                    rowData.push('"' + $cells.eq(5).text().trim().replace(/"/g, '""') + '"'); // Batch
-                    rowData.push('"' + $cells.eq(6).text().trim().replace(/"/g, '""') + '"'); // Phase
-                    rowData.push('"' + $cells.eq(7).text().trim().replace(/"/g, '""') + '"'); // Roll
+                    $cells.each(function(index) {
+                        if (index < header.length) {
+                            rowData.push('"' + $(this).text().trim().replace(/"/g, '""') + '"');
+                        }
+                    });
                     
                     csv.push(rowData.join(","));
                 }
@@ -535,7 +568,7 @@ function tes_students_page() {
                 return;
             }
 
-            var csvFile = new Blob([csv.join("\n")], {type: "text/csv"});
+            var csvFile = new Blob(["\uFEFF" + csv.join("\r\n")], {type: "text/csv;charset=utf-8"});
             var downloadLink = document.createElement("a");
             downloadLink.download = "students_list.csv";
             downloadLink.href = window.URL.createObjectURL(csvFile);

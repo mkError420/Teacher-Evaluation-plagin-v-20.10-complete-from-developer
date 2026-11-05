@@ -41,6 +41,7 @@ function tes_create_tables() {
         student_name VARCHAR(100) NOT NULL,
         username VARCHAR(50) NOT NULL UNIQUE,
         password VARCHAR(255) NOT NULL,
+        email VARCHAR(254) NULL,
         department VARCHAR(100),
         session VARCHAR(100),
         batch_name VARCHAR(100),
