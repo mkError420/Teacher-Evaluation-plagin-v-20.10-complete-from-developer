@@ -16,8 +16,16 @@ function tes_create_tables() {
     // Teachers table
     $sql1 = "CREATE TABLE IF NOT EXISTS $teachers (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        teacher_id_number VARCHAR(100) NULL,
         name VARCHAR(100) NOT NULL,
-        department VARCHAR(100)
+        department VARCHAR(100),
+        designation VARCHAR(100) NULL,
+        phase VARCHAR(100) NULL,
+        class_name VARCHAR(100) NULL,
+        username VARCHAR(50) NULL UNIQUE,
+        password VARCHAR(255) NULL,
+        role VARCHAR(20) DEFAULT 'teacher',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     ) $charset;";
 
     // Surveys table

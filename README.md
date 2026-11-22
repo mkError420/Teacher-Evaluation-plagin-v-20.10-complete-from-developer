@@ -53,12 +53,15 @@ Teacher Evaluation Survey is a comprehensive WordPress plugin designed to facili
 
 ### 📊 Dedicated Dashboards
 *   **Teacher Dashboard:**
-    *   Secure login for teachers (`[teacher_dashboard]`).
-    *   View assigned surveys and real-time performance analytics.
+    *   Secure login for teachers (`[teacher_dashboard]` or `[teacher_login]`).
+    *   Set teacher username & password directly from the "Add Teacher" and "Edit Teacher" admin pages.
+    *   View all assigned surveys with submission counts, scores, and detailed evaluation results.
+    *   Interactive Chart.js pie charts and category breakdowns (Explicit & Implicit).
+    *   **PDF Export:** Download evaluation results as formatted PDF reports.
     *   **Search:** Search assigned surveys.
     *   Password visibility toggle.
 *   **Advisor Dashboard:**
-    *   Secure login for advisors (`[advisor_dashboard]`).
+    *   Secure login for advisors (`[advisor_dashboard]` or `[supervisor_dashboard]`).
     *   Access to all survey results.
     *   **Enhanced Lists:** View Survey Phase and Class details directly in the dashboard list.
     *   **PDF Export:** Download comprehensive survey results as PDF reports.
@@ -106,8 +109,8 @@ Teacher Evaluation Survey is a comprehensive WordPress plugin designed to facili
 ## Shortcodes
 
 *   `[teacher_survey]` - Renders the student login form and survey interface.
-*   `[teacher_dashboard]` - Renders the teacher login and dashboard.
-*   `[advisor_dashboard]` - Renders the advisor login and dashboard.
+*   `[teacher_dashboard]` or `[teacher_login]` - Renders the teacher login and evaluation results dashboard.
+*   `[advisor_dashboard]` or `[supervisor_dashboard]` - Renders the supervisor/advisor login and dashboard.
 
 ## Technical Details
 *   **Database:** Uses custom tables for high performance.

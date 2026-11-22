@@ -8,13 +8,51 @@ function tes_teachers_page() {
 
     // Add/Edit teacher
     if (isset($_POST['tes_save_teacher']) && !empty($_POST['teacher_name'])) {
+        if (!isset($_POST['tes_teacher_nonce']) || !wp_verify_nonce($_POST['tes_teacher_nonce'], 'tes_save_teacher_action')) {
+            wp_die('Security check failed');
+        }
+
         $teacher_name = sanitize_text_field($_POST['teacher_name']);
         $teacher_department = sanitize_text_field($_POST['teacher_department']);
         $teacher_manual_id = isset($_POST['teacher_manual_id']) ? sanitize_text_field($_POST['teacher_manual_id']) : '';
         $teacher_phase = isset($_POST['teacher_phase']) ? sanitize_text_field($_POST['teacher_phase']) : '';
         $teacher_class = isset($_POST['teacher_class']) ? sanitize_text_field($_POST['teacher_class']) : '';
+        $teacher_username = isset($_POST['teacher_username']) ? sanitize_user(trim($_POST['teacher_username']), true) : '';
+        $teacher_password = isset($_POST['teacher_password']) ? $_POST['teacher_password'] : '';
         $teacher_id = !empty($_POST['teacher_id']) ? intval($_POST['teacher_id']) : null;
         $teacher_role = 'teacher';
+
+        // Auto-generate username if empty
+        if (empty($teacher_username)) {
+            if (!empty($teacher_manual_id)) {
+                $teacher_username = sanitize_user(strtolower($teacher_manual_id), true);
+            } else {
+                $teacher_username = sanitize_user(strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $teacher_name)), true);
+            }
+        }
+
+        // Validate username uniqueness
+        if (!empty($teacher_username)) {
+            $existing_user_count = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $table WHERE username = %s AND id != %d",
+                $teacher_username,
+                $teacher_id ?: 0
+            ));
+
+            if ($existing_user_count > 0) {
+                echo '<div class="error notice"><p>Username "' . esc_html($teacher_username) . '" is already taken. Please choose another username.</p></div>';
+                return;
+            }
+        } else {
+            echo '<div class="error notice"><p>Username is required.</p></div>';
+            return;
+        }
+
+        // Validate password for new teachers
+        if (!$teacher_id && empty($teacher_password)) {
+            echo '<div class="error notice"><p>Password is required for new teacher.</p></div>';
+            return;
+        }
 
         // Handle new department
         if ($teacher_department === 'new_department') {
@@ -31,7 +69,7 @@ function tes_teachers_page() {
                 return;
             }
 
-            $old_department = $edit_teacher->department;
+            $old_department = $wpdb->get_var($wpdb->prepare("SELECT department FROM $table WHERE id = %d", $teacher_id));
 
             // Update all teachers in the old department to the new department name
             $wpdb->update(
@@ -86,8 +124,13 @@ function tes_teachers_page() {
                 'teacher_id_number' => $teacher_manual_id,
                 'phase' => $teacher_phase,
                 'class_name' => $teacher_class,
+                'username' => $teacher_username,
                 'role' => $teacher_role
             ];
+
+            if (!empty($teacher_password)) {
+                $data['password'] = $teacher_password;
+            }
 
             if ($teacher_id) {
                 // Update existing teacher
@@ -276,93 +319,136 @@ function tes_teachers_page() {
         <h1><?php echo $edit_teacher ? 'Edit' : 'Add'; ?> Teacher</h1>
 
         <form method="post" style="margin-bottom:20px; background: #fff; padding: 20px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
+            <?php wp_nonce_field('tes_save_teacher_action', 'tes_teacher_nonce'); ?>
             <?php if ($edit_teacher): ?>
                 <input type="hidden" name="teacher_id" value="<?php echo esc_attr($edit_teacher->id); ?>">
             <?php endif; ?>
 
-            <h3 style="margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">Teacher Details</h3>
-            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 20px;">
-            <input type="text"
-                   name="teacher_name"
-                   placeholder="Teacher Name"
-                   value="<?php echo $edit_teacher ? esc_attr($edit_teacher->name) : ''; ?>"
-                   required
-                   style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            <h3 style="margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">Teacher Details &amp; Login Credentials</h3>
+            <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; margin-bottom: 20px;">
+                <div style="display: flex; flex-direction: column;">
+                    <label for="teacher_name" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Teacher Name <span style="color:red;">*</span></label>
+                    <input type="text"
+                           name="teacher_name"
+                           id="teacher_name"
+                           placeholder="Teacher Name"
+                           value="<?php echo $edit_teacher ? esc_attr($edit_teacher->name) : ''; ?>"
+                           required
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-width: 170px;">
+                </div>
 
-            <input type="text"
-                   name="teacher_manual_id"
-                   placeholder="Teacher ID"
-                   value="<?php echo $edit_teacher ? esc_attr($edit_teacher->teacher_id_number) : ''; ?>"
-                   style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px;">
+                <div style="display: flex; flex-direction: column;">
+                    <label for="teacher_manual_id" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Teacher ID</label>
+                    <input type="text"
+                           name="teacher_manual_id"
+                           id="teacher_manual_id"
+                           placeholder="Teacher ID"
+                           value="<?php echo $edit_teacher ? esc_attr($edit_teacher->teacher_id_number) : ''; ?>"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px;">
+                </div>
 
-            <select name="teacher_phase"
-                    id="teacher_phase_select"
-                    style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-width: 120px;">
-                <option value="">Select Phase</option>
-                <?php foreach ($phases as $ph): ?>
-                    <option value="<?php echo esc_attr($ph); ?>"
-                        <?php selected($edit_teacher ? $edit_teacher->phase : '', $ph); ?>>
-                        <?php echo esc_html($ph); ?>
-                    </option>
-                <?php endforeach; ?>
-                <option value="new_phase">+ Add New Phase</option>
-            </select>
+                <div style="display: flex; flex-direction: column;">
+                    <label for="teacher_username" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Username <span style="color:red;">*</span></label>
+                    <input type="text"
+                           name="teacher_username"
+                           id="teacher_username"
+                           placeholder="Username"
+                           value="<?php echo $edit_teacher ? esc_attr($edit_teacher->username) : ''; ?>"
+                           required
+                           autocomplete="off"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 140px;">
+                </div>
 
-            <input type="text"
-                   name="new_phase"
-                   id="new_phase_input"
-                   placeholder="Enter new phase"
-                   style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: none;">
+                <div style="display: flex; flex-direction: column;">
+                    <label for="teacher_password" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">
+                        Password <?php echo $edit_teacher ? '<span style="font-weight: normal; color: #666;">(Leave blank to keep)</span>' : '<span style="color:red;">*</span>'; ?>
+                    </label>
+                    <input type="text"
+                           name="teacher_password"
+                           id="teacher_password"
+                           placeholder="<?php echo $edit_teacher ? 'Leave blank to keep' : 'Password'; ?>"
+                           value="<?php echo ($edit_teacher && !empty($edit_teacher->password) && strpos($edit_teacher->password, '$P$') !== 0 && strpos($edit_teacher->password, '$H$') !== 0) ? esc_attr($edit_teacher->password) : ''; ?>"
+                           <?php echo $edit_teacher ? '' : 'required'; ?>
+                           autocomplete="new-password"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 160px;">
+                </div>
 
-            <select name="teacher_class"
-                    id="teacher_class_select"
-                    style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-width: 120px;">
-                <option value="">Select Class</option>
-                <?php foreach ($classes as $cls): ?>
-                    <option value="<?php echo esc_attr($cls); ?>"
-                        <?php selected($edit_teacher ? $edit_teacher->class_name : '', $cls); ?>>
-                        <?php echo esc_html($cls); ?>
-                    </option>
-                <?php endforeach; ?>
-                <option value="new_class">+ Add New Class</option>
-            </select>
+                <div style="display: flex; flex-direction: column;">
+                    <label for="teacher_phase_select" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Phase</label>
+                    <select name="teacher_phase"
+                            id="teacher_phase_select"
+                            style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-width: 120px;">
+                        <option value="">Select Phase</option>
+                        <?php foreach ($phases as $ph): ?>
+                            <option value="<?php echo esc_attr($ph); ?>"
+                                <?php selected($edit_teacher ? $edit_teacher->phase : '', $ph); ?>>
+                                <?php echo esc_html($ph); ?>
+                            </option>
+                        <?php endforeach; ?>
+                        <option value="new_phase">+ Add New Phase</option>
+                    </select>
 
-            <input type="text"
-                   name="new_class"
-                   id="new_class_input"
-                   placeholder="Enter new class"
-                   style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: none;">
+                    <input type="text"
+                           name="new_phase"
+                           id="new_phase_input"
+                           placeholder="Enter new phase"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-top: 5px; display: none;">
+                </div>
 
-            <select name="teacher_department"
-                    id="teacher_department_select"
-                    required
-                    style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-width: 150px;">
-                <option value="">Select Department</option>
-                <?php foreach ($departments as $dept): ?>
-                    <option value="<?php echo esc_attr($dept); ?>"
-                        <?php selected($edit_teacher ? $edit_teacher->department : '', $dept); ?>>
-                        <?php echo esc_html($dept); ?>
-                    </option>
-                <?php endforeach; ?>
-                <option value="new_department">+ Add New Department</option>
-                <?php if ($edit_teacher): ?>
-                    <option value="edit_current">Edit Current Department</option>
-                <?php endif; ?>
-            </select>
+                <div style="display: flex; flex-direction: column;">
+                    <label for="teacher_class_select" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Class</label>
+                    <select name="teacher_class"
+                            id="teacher_class_select"
+                            style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-width: 120px;">
+                        <option value="">Select Class</option>
+                        <?php foreach ($classes as $cls): ?>
+                            <option value="<?php echo esc_attr($cls); ?>"
+                                <?php selected($edit_teacher ? $edit_teacher->class_name : '', $cls); ?>>
+                                <?php echo esc_html($cls); ?>
+                            </option>
+                        <?php endforeach; ?>
+                        <option value="new_class">+ Add New Class</option>
+                    </select>
 
-            <input type="text"
-                   name="new_department"
-                   id="new_department_input"
-                   placeholder="Enter new department name"
-                   style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: none;">
+                    <input type="text"
+                           name="new_class"
+                           id="new_class_input"
+                           placeholder="Enter new class"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-top: 5px; display: none;">
+                </div>
 
-            <input type="text"
-                   name="edit_department"
-                   id="edit_department_input"
-                   placeholder="Edit department name"
-                   value="<?php echo $edit_teacher ? esc_attr($edit_teacher->department) : ''; ?>"
-                   style="margin-right:10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: none;">
+                <div style="display: flex; flex-direction: column;">
+                    <label for="teacher_department_select" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Department <span style="color:red;">*</span></label>
+                    <select name="teacher_department"
+                            id="teacher_department_select"
+                            required
+                            style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-width: 150px;">
+                        <option value="">Select Department</option>
+                        <?php foreach ($departments as $dept): ?>
+                            <option value="<?php echo esc_attr($dept); ?>"
+                                <?php selected($edit_teacher ? $edit_teacher->department : '', $dept); ?>>
+                                <?php echo esc_html($dept); ?>
+                            </option>
+                        <?php endforeach; ?>
+                        <option value="new_department">+ Add New Department</option>
+                        <?php if ($edit_teacher): ?>
+                            <option value="edit_current">Edit Current Department</option>
+                        <?php endif; ?>
+                    </select>
 
+                    <input type="text"
+                           name="new_department"
+                           id="new_department_input"
+                           placeholder="Enter new department name"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-top: 5px; display: none;">
+
+                    <input type="text"
+                           name="edit_department"
+                           id="edit_department_input"
+                           placeholder="Edit department name"
+                           value="<?php echo $edit_teacher ? esc_attr($edit_teacher->department) : ''; ?>"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-top: 5px; display: none;">
+                </div>
             </div>
 
             <div style="margin-top: 20px;">
@@ -410,7 +496,7 @@ function tes_teachers_page() {
             <h3>Import Teachers from CSV</h3>
             <p class="description">
                 Upload a CSV file with headers matching the database columns.<br>
-                <strong>Allowed Columns:</strong> Name, Department, Teacher ID, Phase, Class.
+                <strong>Allowed Columns:</strong> Name, Department, Teacher ID, Phase, Class, Username, Password.
             </p>
             
             <form id="tes-import-teacher-form" enctype="multipart/form-data">
@@ -451,6 +537,8 @@ function tes_teachers_page() {
                     <th>Department</th>
                     <th>Phase</th>
                     <th>Class</th>
+                    <th>Username</th>
+                    <th>Password</th>
                     <th>Date</th>
                     <th>Actions</th>
                 </tr>
@@ -460,11 +548,21 @@ function tes_teachers_page() {
                     <tr>
                         <th scope="row" class="check-column"><input type="checkbox" name="teacher_ids[]" value="<?php echo esc_attr($t->id); ?>"></th>
                         <td><?php echo esc_html($t->teacher_id_number); ?></td>
-                        <td><?php echo esc_html($t->name); ?></td>
+                        <td><strong><?php echo esc_html($t->name); ?></strong></td>
                         <td><?php echo esc_html($t->department); ?></td>
                         <td><?php echo esc_html($t->phase); ?></td>
                         <td><?php echo esc_html($t->class_name); ?></td>
-                        <td><?php echo esc_html($t->created_at); ?></td>
+                        <td><code><?php echo esc_html($t->username ?: '-'); ?></code></td>
+                        <td><code><?php 
+                            if (empty($t->password)) {
+                                echo '-';
+                            } elseif (strpos($t->password, '$P$') === 0 || strpos($t->password, '$H$') === 0) {
+                                echo '(Hashed)';
+                            } else {
+                                echo esc_html($t->password);
+                            }
+                        ?></code></td>
+                        <td><?php echo !empty($t->created_at) ? esc_html(date('Y-m-d', strtotime($t->created_at))) : '-'; ?></td>
                         <td>
                             <a class="button button-secondary"
                                href="?page=tes-teachers&edit=<?php echo $t->id; ?>"
@@ -479,7 +577,7 @@ function tes_teachers_page() {
                         </td>
                     </tr>
                 <?php endforeach; else: ?>
-                    <tr><td colspan="4">No teachers found.</td></tr>
+                    <tr><td colspan="10">No teachers found.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
@@ -725,7 +823,7 @@ function tes_teachers_page() {
             // CSV Download Logic
             $('#tes-download-teachers-csv').on('click', function() {
                 var csv = [];
-                var header = ["Teacher ID", "Teacher Name", "Department", "Phase", "Class", "Date"];
+                var header = ["Teacher ID", "Teacher Name", "Department", "Phase", "Class", "Username", "Password", "Date"];
                 csv.push(header.join(","));
 
                 $('table.widefat tbody tr').each(function() {
@@ -742,7 +840,9 @@ function tes_teachers_page() {
                         rowData.push('"' + $cells.eq(2).text().trim().replace(/"/g, '""') + '"'); // Department
                         rowData.push('"' + $cells.eq(3).text().trim().replace(/"/g, '""') + '"'); // Phase
                         rowData.push('"' + $cells.eq(4).text().trim().replace(/"/g, '""') + '"'); // Class
-                        rowData.push('"' + $cells.eq(5).text().trim().replace(/"/g, '""') + '"'); // Date
+                        rowData.push('"' + $cells.eq(5).text().trim().replace(/"/g, '""') + '"'); // Username
+                        rowData.push('"' + $cells.eq(6).text().trim().replace(/"/g, '""') + '"'); // Password
+                        rowData.push('"' + $cells.eq(7).text().trim().replace(/"/g, '""') + '"'); // Date
                         
                         csv.push(rowData.join(","));
                     }
@@ -853,6 +953,30 @@ function tes_teachers_page() {
             });
 
             updateDownloadButton();
+
+            <?php if (!$edit_teacher): ?>
+            // Auto-fill username & password suggestion for new teacher
+            $('#teacher_name, #teacher_manual_id').on('input', function() {
+                var manualId = $('#teacher_manual_id').val().trim();
+                var name = $('#teacher_name').val().trim();
+                var usernameField = $('#teacher_username');
+                var passwordField = $('#teacher_password');
+
+                if (usernameField.data('auto') !== false) {
+                    if (manualId !== '') {
+                        usernameField.val(manualId.toLowerCase().replace(/[^a-z0-9_-]/g, ''));
+                    } else if (name !== '') {
+                        usernameField.val(name.toLowerCase().replace(/[^a-z0-9]/g, ''));
+                    }
+                }
+                if (passwordField.data('auto') !== false && manualId !== '') {
+                    passwordField.val(manualId);
+                }
+            });
+
+            $('#teacher_username').on('keydown', function() { $(this).data('auto', false); });
+            $('#teacher_password').on('keydown', function() { $(this).data('auto', false); });
+            <?php endif; ?>
         });
     </script>
 

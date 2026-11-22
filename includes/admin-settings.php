@@ -56,13 +56,13 @@ function tes_settings_page() {
                     </tr>
                     <tr>
                         <td><strong>Supervisor Login</strong></td>
-                        <td><code>[advisor_dashboard]</code></td>
+                        <td><code>[advisor_dashboard]</code> or <code>[supervisor_dashboard]</code></td>
                         <td>Creates the Supervisor (Advisor) login page to view survey results.</td>
                     </tr>
                     <tr>
                         <td><strong>Teacher Login</strong></td>
-                        <td><code>[teacher_dashboard]</code></td>
-                        <td>Creates the Teacher login page for teachers to view their own results.</td>
+                        <td><code>[teacher_dashboard]</code> or <code>[teacher_login]</code></td>
+                        <td>Creates the Teacher login page for teachers to view their own evaluation results.</td>
                     </tr>
                 </tbody>
             </table>

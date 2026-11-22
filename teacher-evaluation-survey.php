@@ -133,6 +133,31 @@ function tes_update_db_schema() {
             $wpdb->query("ALTER TABLE $teachers_table ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP");
             $wpdb->query("UPDATE $teachers_table SET created_at = NOW() WHERE created_at IS NULL OR created_at = '0000-00-00 00:00:00'");
         }
+
+        // Auto-assign username & password for any existing teachers who don't have login credentials
+        $teachers_without_user = $wpdb->get_results("SELECT id, name, teacher_id_number FROM $teachers_table WHERE (username IS NULL OR username = '') AND (role != 'advisor' OR role IS NULL)");
+        if (!empty($teachers_without_user)) {
+            foreach ($teachers_without_user as $twu) {
+                $candidate_user = !empty($twu->teacher_id_number)
+                    ? sanitize_user(strtolower($twu->teacher_id_number), true)
+                    : sanitize_user(strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $twu->name)), true);
+                if (empty($candidate_user)) {
+                    $candidate_user = 'teacher' . $twu->id;
+                }
+                $final_user = $candidate_user;
+                $suffix = 1;
+                while ($wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $teachers_table WHERE username = %s AND id != %d", $final_user, $twu->id)) > 0) {
+                    $final_user = $candidate_user . $suffix;
+                    $suffix++;
+                }
+                $default_pass = !empty($twu->teacher_id_number) ? $twu->teacher_id_number : '123456';
+                $wpdb->update($teachers_table, [
+                    'username' => $final_user,
+                    'password' => $default_pass,
+                    'role'     => 'teacher'
+                ], ['id' => $twu->id]);
+            }
+        }
     }
 
     $surveys_table = $wpdb->prefix . 'tes_surveys';
@@ -549,7 +574,12 @@ function tes_import_teachers() {
         'teacher_id_number' => 'teacher_id_number',
         'phase' => 'phase',
         'class' => 'class_name',
-        'class_name' => 'class_name'
+        'class_name' => 'class_name',
+        'username' => 'username',
+        'user' => 'username',
+        'user_name' => 'username',
+        'password' => 'password',
+        'pass' => 'password'
     ];
 
     $col_indexes = [];
@@ -560,7 +590,7 @@ function tes_import_teachers() {
     }
 
     if (empty($col_indexes)) {
-        wp_send_json_error('No valid columns found. Allowed headers: Name, Department, Teacher ID, Phase, Class.');
+        wp_send_json_error('No valid columns found. Allowed headers: Name, Department, Teacher ID, Phase, Class, Username, Password.');
     }
 
     $import_department = isset($_POST['import_department']) ? sanitize_text_field($_POST['import_department']) : '';
@@ -578,6 +608,37 @@ function tes_import_teachers() {
             if (!empty($import_department)) {
                 $insert_data['department'] = $import_department;
             }
+
+            // Auto-generate username if not provided
+            if (empty($insert_data['username'])) {
+                if (!empty($insert_data['teacher_id_number'])) {
+                    $insert_data['username'] = sanitize_user(strtolower($insert_data['teacher_id_number']), true);
+                } else {
+                    $insert_data['username'] = sanitize_user(strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $insert_data['name'])), true);
+                }
+            }
+            if (empty($insert_data['username'])) {
+                $insert_data['username'] = 'teacher_' . wp_rand(100, 9999);
+            }
+
+            // Auto-generate password if not provided
+            if (empty($insert_data['password'])) {
+                if (!empty($insert_data['teacher_id_number'])) {
+                    $insert_data['password'] = $insert_data['teacher_id_number'];
+                } else {
+                    $insert_data['password'] = '123456';
+                }
+            }
+
+            // Ensure username uniqueness
+            $base_user = $insert_data['username'];
+            $suffix = 1;
+            while ($wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table_name WHERE username = %s", $insert_data['username'])) > 0) {
+                $insert_data['username'] = $base_user . $suffix;
+                $suffix++;
+            }
+
+            $insert_data['role'] = 'teacher';
 
             if ($wpdb->insert($table_name, $insert_data)) {
                 $imported++;
