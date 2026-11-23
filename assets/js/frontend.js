@@ -67,6 +67,11 @@ jQuery(function($) {
                     $form.find('.tes-survey-select').html(options).show().prop('required', true);
                     $form.find('.tes-no-survey-msg').hide();
                     console.log('Surveys dropdown updated and shown');
+
+                    // If only one survey is available for this group, auto-select it and load questions
+                    if (response.data.length === 1) {
+                        $form.find('.tes-survey-select').val(response.data[0].id).trigger('change');
+                    }
                 } else {
                     console.log('No surveys found - success:', response.success, 'data:', response.data);
                     $form.find('.tes-survey-select').html('<option value="">No surveys available</option>').hide().prop('required', false);

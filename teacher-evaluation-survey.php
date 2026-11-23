@@ -220,7 +220,7 @@ function tes_load_questions() {
     ));
     if ($survey_info) {
         $required_group = !empty($survey_info->survey_group) ? trim($survey_info->survey_group) : trim((string)$survey_info->teacher_group);
-        if (!empty($required_group)) {
+        if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
             $selected_group = isset($_POST['group']) ? sanitize_text_field($_POST['group']) : '';
             $student_group = '';
             if ($student_id > 0) {
@@ -314,13 +314,14 @@ function tes_load_surveys_by_class() {
         $params[] = $student_name;
     }
     
-    $query .= " WHERE t.class_name = %s 
+    $query .= " WHERE LOWER(TRIM(t.class_name)) = LOWER(TRIM(%s)) 
                 AND EXISTS (SELECT 1 FROM {$wpdb->prefix}tes_questions WHERE survey_id = s.id)
                 AND sub.id IS NULL";
     $params[] = $class_name;
 
     if (!empty($phase)) {
-        $query .= " AND t.phase = %s";
+        $query .= " AND (LOWER(TRIM(t.phase)) = LOWER(TRIM(%s)) OR %s = '')";
+        $params[] = $phase;
         $params[] = $phase;
     }
 
@@ -331,13 +332,22 @@ function tes_load_surveys_by_class() {
             TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = %s
             OR TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = %s
             OR TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = %s
+            OR LOWER(TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, ''))) = LOWER(%s)
+            OR LOWER(TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, ''))) = LOWER(%s)
+            OR TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = ''
+            OR LOWER(TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, ''))) = 'all'
         )";
         $params[] = $group;
         $params[] = $clean_group;
         $params[] = 'Group ' . $clean_group;
+        $params[] = $clean_group;
+        $params[] = 'Group ' . $clean_group;
     } else {
-        // If no group is selected from "Group (Select)", no surveys will show
-        $query .= " AND 1=0";
+        // If no group is selected from "Group (Select)", show surveys open to all
+        $query .= " AND (
+            TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = ''
+            OR LOWER(TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, ''))) = 'all'
+        )";
     }
 
     $query .= " ORDER BY t.name ASC, s.title ASC";
@@ -635,7 +645,7 @@ function tes_submit_survey() {
             $student_grp = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE student_name = %s", $student_name));
         }
 
-        if (!empty($required_group)) {
+        if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
             $active_group = !empty($submitted_group) ? trim($submitted_group) : trim((string)$student_grp);
             $clean_req = strtolower(trim(preg_replace('/^group\s*/i', '', $required_group)));
             $clean_act = strtolower(trim(preg_replace('/^group\s*/i', '', $active_group)));
