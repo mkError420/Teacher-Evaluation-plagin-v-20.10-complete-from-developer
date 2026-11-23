@@ -13,11 +13,11 @@ jQuery(function($) {
         if (!$form || !$form.length) return;
         $form.find('.tes-no-survey-msg').hide();
 
-        var className = $form.find('select[name="class_name"]').val() || $form.find('.tes-class-auto').val() || '';
-        var phase = $form.find('select[name="phase"]').val() || $form.find('.tes-phase-auto').val() || '';
-        var group = $form.find('input[name="group"]').val() || $form.find('.tes-group-auto').val() || '';
-        var session = $form.find('select[name="session"]').val() || '';
-        var batchName = $form.find('select[name="batch_name"]').val() || '';
+        var className = $form.find('input[name="class_name"]').val() || $form.find('select[name="class_name"]').val() || $form.find('.tes-class-auto').val() || '';
+        var phase = $form.find('input[name="phase"]').val() || $form.find('select[name="phase"]').val() || $form.find('.tes-phase-auto').val() || '';
+        var group = $form.find('select[name="group"]').val() || $form.find('input[name="group"]').val() || $form.find('.tes-group-auto').val() || '';
+        var session = $form.find('input[name="session"]').val() || $form.find('select[name="session"]').val() || '';
+        var batchName = $form.find('input[name="batch_name"]').val() || $form.find('select[name="batch_name"]').val() || '';
         var studentName = $form.find('input[name="student_name"]').val();
         var studentId = $form.find('input[name="student_id"]').val();
 
@@ -76,7 +76,7 @@ jQuery(function($) {
     }
 
     // Populate surveys when any filter criteria is changed
-    $(document).on('change', '.tes-survey-filter, .tes-class-select', function() {
+    $(document).on('change', '.tes-survey-filter, .tes-class-select, .tes-group-select', function() {
         loadSurveys($(this).closest('form'));
     });
 
@@ -97,13 +97,16 @@ jQuery(function($) {
             return;
         }
 
+        var group = $form.find('select[name="group"]').val() || $form.find('input[name="group"]').val() || '';
+
         $.ajax({
             url: tes_ajax.ajax_url,
             type: 'POST',
             cache: false,
             data: {
                 action: 'tes_load_questions',
-                survey_id: survey_id
+                survey_id: survey_id,
+                group: group
             },
             dataType: 'json',
             success: function(response) {

@@ -211,20 +211,25 @@ function tes_load_questions() {
 
     // Verify group access if a student is logged in
     $student_id = tes_get_student_login_id();
-    if ($student_id > 0) {
-        $student_group = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
-        $survey_info = $wpdb->get_row($wpdb->prepare(
-            "SELECT s.id, s.`group` as survey_group, t.`group` as teacher_group 
-             FROM {$wpdb->prefix}tes_surveys s 
-             INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id 
-             WHERE s.id = %d", 
-            $survey_id
-        ));
-        if ($survey_info) {
-            $required_group = !empty($survey_info->survey_group) ? trim($survey_info->survey_group) : trim((string)$survey_info->teacher_group);
-            if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
-                if (empty($student_group) || strcasecmp(trim($student_group), $required_group) !== 0) {
-                    wp_send_json_error('Access restricted: You cannot access surveys outside your assigned group (' . esc_html($student_group) . ').');
+    $survey_info = $wpdb->get_row($wpdb->prepare(
+        "SELECT s.id, s.`group` as survey_group, t.`group` as teacher_group 
+         FROM {$wpdb->prefix}tes_surveys s 
+         INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id 
+         WHERE s.id = %d", 
+        $survey_id
+    ));
+    if ($survey_info) {
+        $required_group = !empty($survey_info->survey_group) ? trim($survey_info->survey_group) : trim((string)$survey_info->teacher_group);
+        if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
+            $selected_group = isset($_POST['group']) ? sanitize_text_field($_POST['group']) : '';
+            $student_group = '';
+            if ($student_id > 0) {
+                $student_group = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
+            }
+            $active_group = !empty($selected_group) ? $selected_group : $student_group;
+            if (!empty($active_group) && strcasecmp($active_group, 'all') !== 0) {
+                if (strcasecmp(trim($active_group), $required_group) !== 0) {
+                    wp_send_json_error('Access restricted: You cannot access surveys outside your group (' . esc_html($active_group) . ').');
                 }
             }
         }
@@ -272,7 +277,8 @@ function tes_load_surveys_by_class() {
     if ($student_id > 0) {
         $student_obj = $wpdb->get_row($wpdb->prepare("SELECT `group`, phase, class_name FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
         if ($student_obj) {
-            if (!empty($student_obj->group)) {
+            // Only fall back to DB group if group wasn't explicitly selected in POST
+            if ($group === '' && !empty($student_obj->group)) {
                 $group = $student_obj->group;
             }
             if (empty($phase) && !empty($student_obj->phase)) {
@@ -318,18 +324,18 @@ function tes_load_surveys_by_class() {
     }
 
     // Group filtering:
-    // When student logs in, student will access surveys group wise:
-    // If a student belongs to a specific group (e.g. Group A), they see surveys targeted to Group A,
-    // plus any surveys that are open to all groups (empty or 'all').
-    // If a student has no group, they only see surveys open to all groups (empty or 'all').
-    if (!empty($group)) {
+    // If a specific group is selected (e.g. Group A), show surveys targeted to Group A,
+    // plus surveys open to all groups (empty or 'all').
+    // If 'all' is selected, show all surveys for this class and phase.
+    // If no group is selected, show surveys open to all groups.
+    if (!empty($group) && strcasecmp($group, 'all') !== 0) {
         $query .= " AND (
             COALESCE(NULLIF(s.`group`, ''), t.`group`, '') = %s
             OR COALESCE(NULLIF(s.`group`, ''), t.`group`, '') = ''
             OR LOWER(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = 'all'
         )";
         $params[] = $group;
-    } else {
+    } elseif (empty($group)) {
         $query .= " AND (
             COALESCE(NULLIF(s.`group`, ''), t.`group`, '') = ''
             OR LOWER(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = 'all'
@@ -623,16 +629,26 @@ function tes_submit_survey() {
     ));
     if ($survey_info) {
         $required_group = !empty($survey_info->survey_group) ? trim($survey_info->survey_group) : trim((string)$survey_info->teacher_group);
+        $submitted_group = isset($_POST['group']) ? sanitize_text_field($_POST['group']) : '';
+        $student_grp = '';
+        if ($student_id > 0) {
+            $student_grp = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
+        } elseif (!empty($student_name)) {
+            $student_grp = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE student_name = %s", $student_name));
+        }
+
         if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
-            $student_grp = '';
-            if ($student_id > 0) {
-                $student_grp = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
-            } elseif (!empty($student_name)) {
-                $student_grp = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE student_name = %s", $student_name));
+            $active_group = !empty($submitted_group) ? $submitted_group : $student_grp;
+            if (!empty($active_group) && strcasecmp($active_group, 'all') !== 0) {
+                if (strcasecmp(trim($active_group), $required_group) !== 0) {
+                    wp_send_json_error('This survey is only accessible to students of Group ' . $required_group . '.');
+                }
             }
-            if (empty($student_grp) || strcasecmp(trim($student_grp), $required_group) !== 0) {
-                wp_send_json_error('This survey is only accessible to students of Group ' . $required_group . '.');
-            }
+        }
+
+        // If student has no group in database and submitted with a group, save it to their student profile
+        if ($student_id > 0 && empty($student_grp) && !empty($submitted_group) && strcasecmp($submitted_group, 'all') !== 0) {
+            $wpdb->update("{$wpdb->prefix}tes_students", ['group' => $submitted_group], ['id' => $student_id]);
         }
     }
 
