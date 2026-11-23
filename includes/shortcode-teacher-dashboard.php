@@ -276,6 +276,7 @@ function tes_teacher_dashboard_shortcode() {
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Class</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Phase</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Group</th>
+                                <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Status</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Submissions</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Average Score</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; text-align: right;">Action</th>
@@ -378,6 +379,17 @@ function tes_teacher_dashboard_shortcode() {
                                             <span style="color: #94a3b8; font-size: 12px;">All</span>
                                         <?php endif; ?>
                                     </td>
+                                    <td style="padding: 14px 16px; text-align: center;">
+                                        <?php if (!empty($survey->status) && $survey->status === 'paused'): ?>
+                                            <span style="display:inline-flex; align-items:center; gap:4px; background:#fef3c7; color:#92400e; font-size:11px; font-weight:600; padding:2px 7px; border-radius:4px; border:1px solid #fde68a;">
+                                                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#f59e0b;"></span> Paused
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="display:inline-flex; align-items:center; gap:4px; background:#dcfce7; color:#15803d; font-size:11px; font-weight:600; padding:2px 7px; border-radius:4px; border:1px solid #86efac;">
+                                                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#22c55e;"></span> Active
+                                            </span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td style="padding: 14px 16px; text-align: center; font-weight: 700; color: #0f172a;">
                                         <?php echo intval($sub_count); ?>
                                     </td>
@@ -403,7 +415,7 @@ function tes_teacher_dashboard_shortcode() {
                                 </tr>
                             <?php endforeach; else: ?>
                                 <tr>
-                                    <td colspan="7" style="padding: 30px; text-align: center; color: #64748b;">
+                                    <td colspan="9" style="padding: 30px; text-align: center; color: #64748b;">
                                         <div style="font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 4px;">No surveys found</div>
                                         <div>No evaluation surveys match your search or are assigned to your profile.</div>
                                     </td>

@@ -33,10 +33,13 @@ function tes_surveys_page() {
             }
         }
 
+        $survey_status = (isset($_POST['survey_status']) && $_POST['survey_status'] === 'paused') ? 'paused' : 'active';
+
         $data = [
             'title'      => sanitize_text_field(wp_unslash($_POST['survey_title'])),
             'teacher_id' => intval($_POST['teacher_id']),
-            'group'      => $survey_group
+            'group'      => $survey_group,
+            'status'     => $survey_status
         ];
         if (!empty($_POST['survey_id'])) {
             $wpdb->update($surveys_table, $data, ['id' => intval($_POST['survey_id'])]);
@@ -63,16 +66,32 @@ function tes_surveys_page() {
         echo '<div class="updated notice"><p>Survey deleted successfully.</p></div>';
     }
 
-    // Bulk Delete Surveys
-    if (isset($_POST['tes_bulk_delete_surveys']) && !empty($_POST['survey_ids'])) {
-        if (!isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'tes_bulk_delete_surveys_nonce')) {
-            wp_die('Security check failed');
+    // Toggle survey status (Active / Paused)
+    if (isset($_GET['tes_toggle_status']) && isset($_GET['new_status'])) {
+        $toggle_id = intval($_GET['tes_toggle_status']);
+        $new_status = sanitize_text_field($_GET['new_status']) === 'paused' ? 'paused' : 'active';
+        if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'tes_toggle_survey_' . $toggle_id)) {
+            $wpdb->update($surveys_table, ['status' => $new_status], ['id' => $toggle_id]);
+            $status_label = ($new_status === 'active') ? 'activated' : 'paused';
+            echo '<div class="updated notice is-dismissible"><p>Survey #' . esc_html($toggle_id) . ' successfully ' . esc_html($status_label) . '.</p></div>';
         }
+    }
+
+    // Bulk Delete / Pause / Activate Surveys
+    if (!empty($_POST['survey_ids']) && isset($_POST['_wpnonce']) && (wp_verify_nonce($_POST['_wpnonce'], 'tes_bulk_surveys_nonce') || wp_verify_nonce($_POST['_wpnonce'], 'tes_bulk_delete_surveys_nonce'))) {
         $ids = array_map('intval', $_POST['survey_ids']);
-        if (!empty($ids)) {
-            $ids_string = implode(',', $ids);
-            $wpdb->query("DELETE FROM $surveys_table WHERE id IN ($ids_string)");
-            echo '<div class="updated notice"><p>' . count($ids) . ' surveys deleted successfully.</p></div>';
+        $ids_string = implode(',', $ids);
+        if (!empty($ids_string)) {
+            if (isset($_POST['tes_bulk_delete_surveys'])) {
+                $wpdb->query("DELETE FROM $surveys_table WHERE id IN ($ids_string)");
+                echo '<div class="updated notice is-dismissible"><p>' . count($ids) . ' surveys deleted successfully.</p></div>';
+            } elseif (isset($_POST['tes_bulk_pause_surveys'])) {
+                $wpdb->query("UPDATE $surveys_table SET status = 'paused' WHERE id IN ($ids_string)");
+                echo '<div class="updated notice is-dismissible"><p>' . count($ids) . ' surveys paused successfully.</p></div>';
+            } elseif (isset($_POST['tes_bulk_activate_surveys'])) {
+                $wpdb->query("UPDATE $surveys_table SET status = 'active' WHERE id IN ($ids_string)");
+                echo '<div class="updated notice is-dismissible"><p>' . count($ids) . ' surveys activated successfully.</p></div>';
+            }
         }
     }
 
@@ -177,6 +196,11 @@ function tes_surveys_page() {
                    placeholder="Enter new group"
                    style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; display: none; width: 130px; margin-right: 5px;">
 
+            <select name="survey_status" id="tes_survey_status_select" style="margin-right: 5px; min-width: 125px;">
+                <option value="active" <?php selected($edit_survey ? ($edit_survey->status ?? 'active') : 'active', 'active'); ?>>Status: Active</option>
+                <option value="paused" <?php selected($edit_survey ? ($edit_survey->status ?? 'active') : 'active', 'paused'); ?>>Status: Paused</option>
+            </select>
+
             <button type="submit"
                     name="tes_save_survey"
                     class="button button-primary">
@@ -202,11 +226,11 @@ function tes_surveys_page() {
         </form>
 
         <form method="post">
-        <?php wp_nonce_field('tes_bulk_delete_surveys_nonce', '_wpnonce'); ?>
-        <div class="tablenav top" style="padding: 10px 0;">
-            <div class="alignleft actions">
-                <button type="submit" name="tes_bulk_delete_surveys" class="button button-secondary" onclick="return confirm('Are you sure you want to delete selected surveys?');">Delete Selected</button>
-            </div>
+        <?php wp_nonce_field('tes_bulk_surveys_nonce', '_wpnonce'); ?>
+        <div class="tablenav top" style="padding: 10px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button type="submit" name="tes_bulk_activate_surveys" class="button button-secondary" style="color: #15803d; border-color: #86efac; font-weight: 500;">&#9658; Activate Selected</button>
+            <button type="submit" name="tes_bulk_pause_surveys" class="button button-secondary" style="color: #b45309; border-color: #fde68a; font-weight: 500;">&#10074;&#10074; Pause Selected</button>
+            <button type="submit" name="tes_bulk_delete_surveys" class="button button-secondary" style="color: #b91c1c; border-color: #fca5a5;" onclick="return confirm('Are you sure you want to delete selected surveys?');">Delete Selected</button>
         </div>
 
         <table class="widefat striped">
@@ -219,6 +243,7 @@ function tes_surveys_page() {
                     <th>Phase</th>
                     <th>Class</th>
                     <th>Group</th>
+                    <th>Status</th>
                     <th>Questions</th>
                     <th>Date</th>
                     <th>Actions</th>
@@ -244,6 +269,36 @@ function tes_surveys_page() {
                             ?>
                         </td>
                         <td>
+                            <?php 
+                            $s_status = (!empty($s->status) && $s->status === 'paused') ? 'paused' : 'active';
+                            ?>
+                            <div style="display: inline-flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; font-size: 12px; font-weight: 600; vertical-align: middle; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                                <?php if ($s_status === 'active'): ?>
+                                    <span style="background: #16a34a; color: #ffffff; padding: 4px 9px; display: inline-flex; align-items: center; gap: 4px; border-right: 1px solid #15803d; cursor: default;" title="Currently Active">
+                                        <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#fff;"></span> Active
+                                    </span>
+                                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=tes-surveys&tes_toggle_status=' . $s->id . '&new_status=paused'), 'tes_toggle_survey_' . $s->id)); ?>" 
+                                       style="background: #ffffff; color: #64748b; padding: 4px 9px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s;" 
+                                       onmouseover="this.style.background='#fef3c7'; this.style.color='#b45309';" 
+                                       onmouseout="this.style.background='#ffffff'; this.style.color='#64748b';" 
+                                       title="Click to Pause this survey">
+                                        &#10074;&#10074; Pause
+                                    </a>
+                                <?php else: ?>
+                                    <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=tes-surveys&tes_toggle_status=' . $s->id . '&new_status=active'), 'tes_toggle_survey_' . $s->id)); ?>" 
+                                       style="background: #ffffff; color: #64748b; padding: 4px 9px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; border-right: 1px solid #cbd5e1; transition: all 0.15s;" 
+                                       onmouseover="this.style.background='#dcfce7'; this.style.color='#15803d';" 
+                                       onmouseout="this.style.background='#ffffff'; this.style.color='#64748b';" 
+                                       title="Click to Activate this survey">
+                                        &#9658; Active
+                                    </a>
+                                    <span style="background: #d97706; color: #ffffff; padding: 4px 9px; display: inline-flex; align-items: center; gap: 4px; cursor: default;" title="Currently Paused">
+                                        <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#fff;"></span> Paused
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                        <td>
                             <?php if ($s->questions_count > 0): ?>
                                 <a href="<?php echo esc_url(admin_url('admin.php?page=tes-questions&survey_id=' . $s->id)); ?>" class="button button-secondary button-small" style="font-weight: 600; color: #0284c7;" title="View and manage questions in Question Builder">
                                     &#9998; <?php echo intval($s->questions_count); ?> Questions
@@ -256,14 +311,25 @@ function tes_surveys_page() {
                         </td>
                         <td><?php echo esc_html($s->created_at); ?></td>
                         <td>
-                            <a href="?page=tes-surveys&edit_survey=<?php echo $s->id; ?>" class="button button-secondary">Edit</a>
-                            <a href="<?php echo esc_url(admin_url('admin.php?page=tes-questions&survey_id=' . $s->id)); ?>" class="button button-secondary" title="Survey Question Builder">Questions</a>
-                            <a href="?page=tes-surveys&delete_survey=<?php echo $s->id; ?>" class="button button-secondary" onclick="return confirm('Are you sure?')">Delete</a>
+                            <?php if ($s_status === 'paused'): ?>
+                                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=tes-surveys&tes_toggle_status=' . $s->id . '&new_status=active'), 'tes_toggle_survey_' . $s->id)); ?>" 
+                                   class="button button-secondary button-small" 
+                                   style="color: #15803d; border-color: #86efac; font-weight: 600; margin-right: 3px;" 
+                                   title="Activate survey">&#9658; Active</a>
+                            <?php else: ?>
+                                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=tes-surveys&tes_toggle_status=' . $s->id . '&new_status=paused'), 'tes_toggle_survey_' . $s->id)); ?>" 
+                                   class="button button-secondary button-small" 
+                                   style="color: #b45309; border-color: #fde68a; font-weight: 600; margin-right: 3px;" 
+                                   title="Pause survey">&#10074;&#10074; Pause</a>
+                            <?php endif; ?>
+                            <a href="?page=tes-surveys&edit_survey=<?php echo $s->id; ?>" class="button button-secondary button-small">Edit</a>
+                            <a href="<?php echo esc_url(admin_url('admin.php?page=tes-questions&survey_id=' . $s->id)); ?>" class="button button-secondary button-small" title="Survey Question Builder">Questions</a>
+                            <a href="?page=tes-surveys&delete_survey=<?php echo $s->id; ?>" class="button button-secondary button-small" onclick="return confirm('Are you sure?')">Delete</a>
                         </td>
                     </tr>
                 <?php endforeach; else: ?>
                     <tr>
-                        <td colspan="10">No surveys created yet.</td>
+                        <td colspan="11">No surveys created yet.</td>
                     </tr>
                 <?php endif; ?>
             </tbody>

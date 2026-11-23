@@ -165,6 +165,10 @@ function tes_update_db_schema() {
         if (empty($wpdb->get_results("SHOW COLUMNS FROM $surveys_table LIKE 'group'"))) {
             $wpdb->query("ALTER TABLE $surveys_table ADD COLUMN `group` VARCHAR(100) NULL");
         }
+        if (empty($wpdb->get_results("SHOW COLUMNS FROM $surveys_table LIKE 'status'"))) {
+            $wpdb->query("ALTER TABLE $surveys_table ADD COLUMN status VARCHAR(20) DEFAULT 'active'");
+            $wpdb->query("UPDATE $surveys_table SET status = 'active' WHERE status IS NULL OR status = ''");
+        }
         if (empty($wpdb->get_results("SHOW COLUMNS FROM $surveys_table LIKE 'last_updated'"))) {
             $wpdb->query("ALTER TABLE $surveys_table ADD COLUMN last_updated DATETIME NULL");
         }
@@ -212,12 +216,15 @@ function tes_load_questions() {
     // Verify group access if a student is logged in
     $student_id = tes_get_student_login_id();
     $survey_info = $wpdb->get_row($wpdb->prepare(
-        "SELECT s.id, s.`group` as survey_group, t.`group` as teacher_group 
+        "SELECT s.id, s.status, s.`group` as survey_group, t.`group` as teacher_group 
          FROM {$wpdb->prefix}tes_surveys s 
          INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id 
          WHERE s.id = %d", 
         $survey_id
     ));
+    if ($survey_info && !empty($survey_info->status) && $survey_info->status === 'paused') {
+        wp_send_json_error('This survey is currently paused and not accepting responses.');
+    }
     if ($survey_info) {
         $required_group = !empty($survey_info->survey_group) ? trim($survey_info->survey_group) : trim((string)$survey_info->teacher_group);
         if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
@@ -315,6 +322,7 @@ function tes_load_surveys_by_class() {
     }
     
     $query .= " WHERE LOWER(TRIM(t.class_name)) = LOWER(TRIM(%s)) 
+                AND (s.status = 'active' OR s.status IS NULL OR s.status = '')
                 AND EXISTS (SELECT 1 FROM {$wpdb->prefix}tes_questions WHERE survey_id = s.id)
                 AND sub.id IS NULL";
     $params[] = $class_name;
@@ -627,14 +635,17 @@ function tes_submit_survey() {
         }
     }
 
-    // Verify group access
+    // Verify group access and active status
     $survey_info = $wpdb->get_row($wpdb->prepare(
-        "SELECT s.id, s.`group` as survey_group, t.`group` as teacher_group 
+        "SELECT s.id, s.status, s.`group` as survey_group, t.`group` as teacher_group 
          FROM {$wpdb->prefix}tes_surveys s 
          INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id 
          WHERE s.id = %d", 
         $survey_id
     ));
+    if ($survey_info && !empty($survey_info->status) && $survey_info->status === 'paused') {
+        wp_send_json_error('This survey is currently paused and cannot be submitted.');
+    }
     if ($survey_info) {
         $required_group = !empty($survey_info->survey_group) ? trim($survey_info->survey_group) : trim((string)$survey_info->teacher_group);
         $submitted_group = isset($_POST['group']) ? sanitize_text_field($_POST['group']) : '';

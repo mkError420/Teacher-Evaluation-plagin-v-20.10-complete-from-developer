@@ -34,7 +34,8 @@ function tes_create_tables() {
         id INT AUTO_INCREMENT PRIMARY KEY,
         teacher_id INT NOT NULL,
         title VARCHAR(255) NOT NULL,
-        `group` VARCHAR(100) NULL
+        `group` VARCHAR(100) NULL,
+        status VARCHAR(20) DEFAULT 'active'
     ) $charset;";
 
     // Questions table

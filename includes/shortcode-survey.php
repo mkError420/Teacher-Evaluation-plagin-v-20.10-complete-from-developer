@@ -225,6 +225,7 @@ function tes_student_survey_shortcode() {
             INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id
             WHERE LOWER(TRIM(t.class_name)) = LOWER(TRIM(%s))
               AND (LOWER(TRIM(t.phase)) = LOWER(TRIM(%s)) OR %s = '')
+              AND (s.status = 'active' OR s.status IS NULL OR s.status = '')
               AND EXISTS (SELECT 1 FROM {$wpdb->prefix}tes_questions WHERE survey_id = s.id)
               AND COALESCE(NULLIF(s.`group`, ''), t.`group`, '') IS NOT NULL
               AND COALESCE(NULLIF(s.`group`, ''), t.`group`, '') != ''
