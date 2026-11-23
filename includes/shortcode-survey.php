@@ -425,9 +425,12 @@ function tes_student_survey_shortcode() {
                         <label for="tes_filter_group" style="font-weight: 600; font-size: 12px; color: #0f172a; margin-bottom: 4px; display: block;">Group <span style="font-size: 10px; color: #2563eb; font-weight: 700;">(Select)</span></label>
                         <select name="group" id="tes_filter_group" class="tes-group-select tes-survey-filter" style="width: 100%; padding: 8px; border: 1.5px solid #2563eb; border-radius: 6px; font-size: 13.5px; background: #fff; cursor: pointer; color: #0f172a; font-weight: 600;">
                             <option value="">Select Group</option>
-                            <option value="all" <?php selected($current_student->group, 'all'); ?>>All Groups</option>
-                            <?php foreach ($groups as $g): ?>
-                                <option value="<?php echo esc_attr($g); ?>" <?php selected($current_student->group, $g); ?>>Group <?php echo esc_html($g); ?></option>
+                            <?php foreach ($groups as $g): 
+                                $g_trimmed = trim($g);
+                                if ($g_trimmed === '' || strcasecmp($g_trimmed, 'all') === 0) continue;
+                                $display_text = (stripos($g_trimmed, 'group') === 0) ? $g_trimmed : 'Group ' . $g_trimmed;
+                            ?>
+                                <option value="<?php echo esc_attr($g_trimmed); ?>" <?php selected($current_student->group, $g_trimmed); ?>><?php echo esc_html($display_text); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>

@@ -28,6 +28,14 @@ jQuery(function($) {
             return;
         }
 
+        if (!group) {
+            $form.find('.tes-survey-select').html('<option value="">Select Group First</option>').hide().prop('required', false);
+            $form.find('.tes-questions-area').empty();
+            $form.find('.tes-comment-section').hide();
+            $form.find('.tes-no-survey-msg').text('Please select your Group above to view surveys.').show();
+            return;
+        }
+
         console.log('Sending AJAX request for surveys:', { class: className, phase: phase, group: group, session: session, batch: batchName });
         
         $.ajax({
@@ -52,7 +60,8 @@ jQuery(function($) {
                     var options = '<option value="">Select Teacher Survey (' + response.data.length + ' Available)</option>';
                     $.each(response.data, function(i, survey) {
                         console.log('Survey', i, ':', survey);
-                        var groupTag = (survey.target_group && survey.target_group.toLowerCase() !== 'all') ? ' (Group ' + survey.target_group + ')' : '';
+                        var g = survey.target_group ? (survey.target_group.toLowerCase().indexOf('group') === 0 ? survey.target_group : 'Group ' + survey.target_group) : '';
+                        var groupTag = g ? ' (' + g + ')' : '';
                         options += '<option value="' + survey.id + '">' + survey.teacher_name + ' - ' + survey.title + groupTag + '</option>';
                     });
                     $form.find('.tes-survey-select').html(options).show().prop('required', true);
@@ -61,7 +70,8 @@ jQuery(function($) {
                 } else {
                     console.log('No surveys found - success:', response.success, 'data:', response.data);
                     $form.find('.tes-survey-select').html('<option value="">No surveys available</option>').hide().prop('required', false);
-                    $form.find('.tes-no-survey-msg').show();
+                    var groupLabel = group ? (group.toLowerCase().indexOf('group') === 0 ? group : 'Group ' + group) : 'this group';
+                    $form.find('.tes-no-survey-msg').text('No survey available now for ' + groupLabel).show();
                 }
                 $form.find('.tes-questions-area').empty();
                 $form.find('.tes-comment-section').hide();
