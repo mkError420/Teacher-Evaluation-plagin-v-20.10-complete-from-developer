@@ -17,6 +17,7 @@ function tes_teachers_page() {
         $teacher_manual_id = isset($_POST['teacher_manual_id']) ? sanitize_text_field($_POST['teacher_manual_id']) : '';
         $teacher_phase = isset($_POST['teacher_phase']) ? sanitize_text_field($_POST['teacher_phase']) : '';
         $teacher_class = isset($_POST['teacher_class']) ? sanitize_text_field($_POST['teacher_class']) : '';
+        $teacher_group = isset($_POST['teacher_group']) ? sanitize_text_field($_POST['teacher_group']) : '';
         $teacher_username = isset($_POST['teacher_username']) ? sanitize_user(trim($_POST['teacher_username']), true) : '';
         $teacher_password = isset($_POST['teacher_password']) ? $_POST['teacher_password'] : '';
         $teacher_id = !empty($_POST['teacher_id']) ? intval($_POST['teacher_id']) : null;
@@ -124,6 +125,7 @@ function tes_teachers_page() {
                 'teacher_id_number' => $teacher_manual_id,
                 'phase' => $teacher_phase,
                 'class_name' => $teacher_class,
+                'group' => $teacher_group,
                 'username' => $teacher_username,
                 'role' => $teacher_role
             ];
@@ -249,6 +251,7 @@ function tes_teachers_page() {
     $search_term = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
     $filter_phase = isset($_GET['filter_phase']) ? sanitize_text_field($_GET['filter_phase']) : '';
     $filter_class = isset($_GET['filter_class']) ? sanitize_text_field($_GET['filter_class']) : '';
+    $filter_group = isset($_GET['filter_group']) ? sanitize_text_field($_GET['filter_group']) : '';
 
     $sql = "SELECT * FROM $table";
     $where_clauses = [];
@@ -258,8 +261,8 @@ function tes_teachers_page() {
 
     if (!empty($search_term)) {
         $like = '%' . $wpdb->esc_like($search_term) . '%';
-        $where_clauses[] = "(name LIKE %s OR department LIKE %s OR teacher_id_number LIKE %s OR phase LIKE %s OR class_name LIKE %s)";
-        array_push($params, $like, $like, $like, $like, $like);
+        $where_clauses[] = "(name LIKE %s OR department LIKE %s OR teacher_id_number LIKE %s OR phase LIKE %s OR class_name LIKE %s OR `group` LIKE %s)";
+        array_push($params, $like, $like, $like, $like, $like, $like);
     }
     
     if (!empty($filter_phase)) {
@@ -270,6 +273,11 @@ function tes_teachers_page() {
     if (!empty($filter_class)) {
         $where_clauses[] = "class_name = %s";
         $params[] = $filter_class;
+    }
+
+    if (!empty($filter_group)) {
+        $where_clauses[] = "`group` = %s";
+        $params[] = $filter_group;
     }
 
     if (!empty($where_clauses)) {
@@ -306,6 +314,11 @@ function tes_teachers_page() {
     // Get unique classes for dropdown
     $classes = $wpdb->get_col("
         SELECT DISTINCT class_name FROM $table WHERE class_name != '' ORDER BY class_name
+    ");
+
+    // Get unique groups for dropdown
+    $groups = $wpdb->get_col("
+        SELECT DISTINCT `group` FROM $table WHERE `group` IS NOT NULL AND `group` != '' ORDER BY `group` ASC
     ");
 
     // Get teacher for editing
@@ -418,6 +431,16 @@ function tes_teachers_page() {
                 </div>
 
                 <div style="display: flex; flex-direction: column;">
+                    <label for="teacher_group" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Group</label>
+                    <input type="text"
+                           name="teacher_group"
+                           id="teacher_group"
+                           placeholder="e.g. A, B"
+                           value="<?php echo $edit_teacher ? esc_attr($edit_teacher->group) : ''; ?>"
+                           style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 110px;">
+                </div>
+
+                <div style="display: flex; flex-direction: column;">
                     <label for="teacher_department_select" style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Department <span style="color:red;">*</span></label>
                     <select name="teacher_department"
                             id="teacher_department_select"
@@ -481,12 +504,19 @@ function tes_teachers_page() {
                 <?php endforeach; ?>
             </select>
 
+            <select name="filter_group" style="margin-right: 5px;">
+                <option value="">All Groups</option>
+                <?php foreach ($groups as $grp): ?>
+                    <option value="<?php echo esc_attr($grp); ?>" <?php selected($filter_group, $grp); ?>><?php echo esc_html($grp); ?></option>
+                <?php endforeach; ?>
+            </select>
+
             <div style="position: relative; display: inline-block; width: 300px;">
-                <input type="text" name="s" id="tes_teacher_search_input" value="<?php echo esc_attr($search_term); ?>" placeholder="Search by Name, ID, Dept, Phase or Class" style="width: 100%;" autocomplete="off">
+                <input type="text" name="s" id="tes_teacher_search_input" value="<?php echo esc_attr($search_term); ?>" placeholder="Search by Name, ID, Dept, Phase, Class or Group" style="width: 100%;" autocomplete="off">
                 <div id="tes_teacher_search_suggestions" style="display:none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccd0d4; z-index: 1000; max-height: 300px; overflow-y: auto; box-shadow: 0 4px 5px rgba(0,0,0,0.1);"></div>
             </div>
             <button type="submit" class="button button-secondary">Filter</button>
-            <?php if (!empty($search_term) || !empty($filter_phase) || !empty($filter_class)): ?>
+            <?php if (!empty($search_term) || !empty($filter_phase) || !empty($filter_class) || !empty($filter_group)): ?>
                 <a href="<?php echo admin_url('admin.php?page=tes-teachers'); ?>" class="button">Reset</a>
             <?php endif; ?>
         </form>
@@ -496,7 +526,7 @@ function tes_teachers_page() {
             <h3>Import Teachers from CSV</h3>
             <p class="description">
                 Upload a CSV file with headers matching the database columns.<br>
-                <strong>Allowed Columns:</strong> Name, Department, Teacher ID, Phase, Class, Username, Password.
+                <strong>Allowed Columns:</strong> Name, Department, Teacher ID, Phase, Class, Group, Username, Password.
             </p>
             
             <form id="tes-import-teacher-form" enctype="multipart/form-data">
@@ -537,6 +567,7 @@ function tes_teachers_page() {
                     <th>Department</th>
                     <th>Phase</th>
                     <th>Class</th>
+                    <th>Group</th>
                     <th>Username</th>
                     <th>Password</th>
                     <th>Date</th>
@@ -552,6 +583,7 @@ function tes_teachers_page() {
                         <td><?php echo esc_html($t->department); ?></td>
                         <td><?php echo esc_html($t->phase); ?></td>
                         <td><?php echo esc_html($t->class_name); ?></td>
+                        <td><?php echo esc_html($t->group ?: '-'); ?></td>
                         <td><code><?php echo esc_html($t->username ?: '-'); ?></code></td>
                         <td><code><?php 
                             if (empty($t->password)) {
@@ -577,7 +609,7 @@ function tes_teachers_page() {
                         </td>
                     </tr>
                 <?php endforeach; else: ?>
-                    <tr><td colspan="10">No teachers found.</td></tr>
+                    <tr><td colspan="11">No teachers found.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
@@ -823,7 +855,7 @@ function tes_teachers_page() {
             // CSV Download Logic
             $('#tes-download-teachers-csv').on('click', function() {
                 var csv = [];
-                var header = ["Teacher ID", "Teacher Name", "Department", "Phase", "Class", "Username", "Password", "Date"];
+                var header = ["Teacher ID", "Teacher Name", "Department", "Phase", "Class", "Group", "Username", "Password", "Date"];
                 csv.push(header.join(","));
 
                 $('table.widefat tbody tr').each(function() {
@@ -840,9 +872,10 @@ function tes_teachers_page() {
                         rowData.push('"' + $cells.eq(2).text().trim().replace(/"/g, '""') + '"'); // Department
                         rowData.push('"' + $cells.eq(3).text().trim().replace(/"/g, '""') + '"'); // Phase
                         rowData.push('"' + $cells.eq(4).text().trim().replace(/"/g, '""') + '"'); // Class
-                        rowData.push('"' + $cells.eq(5).text().trim().replace(/"/g, '""') + '"'); // Username
-                        rowData.push('"' + $cells.eq(6).text().trim().replace(/"/g, '""') + '"'); // Password
-                        rowData.push('"' + $cells.eq(7).text().trim().replace(/"/g, '""') + '"'); // Date
+                        rowData.push('"' + $cells.eq(5).text().trim().replace(/"/g, '""') + '"'); // Group
+                        rowData.push('"' + $cells.eq(6).text().trim().replace(/"/g, '""') + '"'); // Username
+                        rowData.push('"' + $cells.eq(7).text().trim().replace(/"/g, '""') + '"'); // Password
+                        rowData.push('"' + $cells.eq(8).text().trim().replace(/"/g, '""') + '"'); // Date
                         
                         csv.push(rowData.join(","));
                     }
@@ -920,9 +953,10 @@ function tes_teachers_page() {
                                     var escapedID = item.teacher_id_number ? $('<div>').text(item.teacher_id_number).html() : '';
                                     var escapedPhase = item.phase ? $('<div>').text(item.phase).html() : '';
                                     var escapedClass = item.class_name ? $('<div>').text(item.class_name).html() : '';
+                                    var escapedGroup = item.group ? $('<div>').text(item.group).html() : '';
                                     
                                     var label = escapedName + (escapedID ? ' (' + escapedID + ')' : '');
-                                    var meta = escapedDept + (escapedPhase ? ' - ' + escapedPhase : '') + (escapedClass ? ' - ' + escapedClass : '');
+                                    var meta = escapedDept + (escapedPhase ? ' - ' + escapedPhase : '') + (escapedClass ? ' - ' + escapedClass : '') + (escapedGroup ? ' - Group ' + escapedGroup : '');
 
                                     var $itemDiv = $('<div class="tes-suggestion-item"></div>');
                                     $itemDiv.attr('data-value', item.name);

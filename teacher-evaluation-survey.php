@@ -113,10 +113,10 @@ function tes_update_db_schema() {
 
     $teachers_table = $wpdb->prefix . 'tes_teachers';
     if ($wpdb->get_var("SHOW TABLES LIKE '$teachers_table'")) {
-        $teacher_cols = ['teacher_id_number', 'phase', 'class_name', 'designation'];
+        $teacher_cols = ['teacher_id_number', 'phase', 'class_name', 'designation', 'group'];
         foreach ($teacher_cols as $col) {
             if (empty($wpdb->get_results("SHOW COLUMNS FROM $teachers_table LIKE '$col'"))) {
-                $wpdb->query("ALTER TABLE $teachers_table ADD COLUMN $col VARCHAR(100) NULL");
+                $wpdb->query("ALTER TABLE $teachers_table ADD COLUMN `$col` VARCHAR(100) NULL");
             }
         }
         // Add username and password for teachers
@@ -743,6 +743,9 @@ function tes_import_teachers() {
         'phase' => 'phase',
         'class' => 'class_name',
         'class_name' => 'class_name',
+        'group' => 'group',
+        'teacher_group' => 'group',
+        'group_name' => 'group',
         'username' => 'username',
         'user' => 'username',
         'user_name' => 'username',
@@ -758,7 +761,7 @@ function tes_import_teachers() {
     }
 
     if (empty($col_indexes)) {
-        wp_send_json_error('No valid columns found. Allowed headers: Name, Department, Teacher ID, Phase, Class, Username, Password.');
+        wp_send_json_error('No valid columns found. Allowed headers: Name, Department, Teacher ID, Phase, Class, Group, Username, Password.');
     }
 
     $import_department = isset($_POST['import_department']) ? sanitize_text_field($_POST['import_department']) : '';
@@ -879,11 +882,11 @@ function tes_teacher_search_autocomplete() {
     
     // Search for teachers by name or department
     $results = $wpdb->get_results($wpdb->prepare(
-        "SELECT name, department, teacher_id_number, phase, class_name 
+        "SELECT name, department, teacher_id_number, phase, class_name, `group` 
          FROM {$wpdb->prefix}tes_teachers 
-         WHERE (name LIKE %s OR department LIKE %s OR teacher_id_number LIKE %s OR phase LIKE %s OR class_name LIKE %s) AND (role != 'advisor' OR role IS NULL)
+         WHERE (name LIKE %s OR department LIKE %s OR teacher_id_number LIKE %s OR phase LIKE %s OR class_name LIKE %s OR `group` LIKE %s) AND (role != 'advisor' OR role IS NULL)
          LIMIT 10",
-        $like, $like, $like, $like, $like
+        $like, $like, $like, $like, $like, $like
     ));
 
     $suggestions = [];

@@ -22,6 +22,7 @@ function tes_create_tables() {
         designation VARCHAR(100) NULL,
         phase VARCHAR(100) NULL,
         class_name VARCHAR(100) NULL,
+        `group` VARCHAR(100) NULL,
         username VARCHAR(50) NULL UNIQUE,
         password VARCHAR(255) NULL,
         role VARCHAR(20) DEFAULT 'teacher',

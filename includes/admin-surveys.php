@@ -126,7 +126,7 @@ function tes_surveys_page() {
                         data-phase="<?php echo esc_attr($t->phase); ?>"
                         data-class="<?php echo esc_attr($t->class_name); ?>"
                         <?php selected($edit_survey ? $edit_survey->teacher_id : '', $t->id); ?>>
-                        <?php echo esc_html($t->name . ' (' . $t->department . (!empty($t->phase) ? ' - ' . $t->phase : '') . (!empty($t->class_name) ? ' - ' . $t->class_name : '') . ')'); ?>
+                        <?php echo esc_html($t->name . ' (' . $t->department . (!empty($t->phase) ? ' - ' . $t->phase : '') . (!empty($t->class_name) ? ' - ' . $t->class_name : '') . (!empty($t->group) ? ' - Group ' . $t->group : '') . ')'); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
