@@ -32,6 +32,7 @@ function tes_students_page() {
         if ($class_name === 'new_class') {
             $class_name = sanitize_text_field($_POST['new_class']);
         }
+        $group = isset($_POST['group']) ? sanitize_text_field($_POST['group']) : '';
         $session = sanitize_text_field($_POST['session']);
         $batch_name = sanitize_text_field($_POST['batch_name']);
         $phase = sanitize_text_field($_POST['phase']);
@@ -82,9 +83,10 @@ function tes_students_page() {
                         'session' => $session,
                         'batch_name' => $batch_name,
                         'phase' => $phase,
-                        'roll' => $roll
+                        'roll' => $roll,
+                        'group' => $group
                     ],
-                    ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
+                    ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
                 );
 
                 if ($result) {
@@ -110,6 +112,7 @@ function tes_students_page() {
         if ($class_name === 'new_class') {
             $class_name = sanitize_text_field($_POST['new_class']);
         }
+        $group = isset($_POST['group']) ? sanitize_text_field($_POST['group']) : '';
         $session = sanitize_text_field($_POST['session']);
         $batch_name = sanitize_text_field($_POST['batch_name']);
         $phase = sanitize_text_field($_POST['phase']);
@@ -145,7 +148,8 @@ function tes_students_page() {
                     'session' => $session,
                     'batch_name' => $batch_name,
                     'phase' => $phase,
-                    'roll' => $roll
+                    'roll' => $roll,
+                    'group' => $group
                 ];
 
                 // Only update password if provided
@@ -192,22 +196,28 @@ function tes_students_page() {
         $edit_student = $wpdb->get_row($wpdb->prepare("SELECT * FROM $students_table WHERE id = %d", intval($_GET['student_id'])));
     }
 
-    // Get unique phases and classes for filters
+    // Get unique phases, classes, and groups for filters
     $phases = $wpdb->get_col("SELECT DISTINCT phase FROM $students_table WHERE phase != '' ORDER BY phase ASC");
     $classes = $wpdb->get_col("SELECT DISTINCT class_name FROM $students_table WHERE class_name != '' ORDER BY class_name ASC");
+    $groups = $wpdb->get_col("SELECT DISTINCT `group` FROM $students_table WHERE `group` IS NOT NULL AND `group` != '' ORDER BY `group` ASC");
 
     // Handle Search and Filtering
     $search_term = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
     $filter_phase = isset($_GET['filter_phase']) ? sanitize_text_field($_GET['filter_phase']) : '';
     $filter_class = isset($_GET['filter_class']) ? sanitize_text_field($_GET['filter_class']) : '';
+    $filter_group = isset($_GET['filter_group']) ? sanitize_text_field($_GET['filter_group']) : '';
 
     $sql = "SELECT * FROM $students_table";
     $where_clauses = [];
     $params = [];
 
     if (!empty($search_term)) {
-        $where_clauses[] = "student_name LIKE %s";
-        $params[] = '%' . $wpdb->esc_like($search_term) . '%';
+        $where_clauses[] = "(student_name LIKE %s OR roll LIKE %s OR `group` LIKE %s OR username LIKE %s)";
+        $search_like = '%' . $wpdb->esc_like($search_term) . '%';
+        $params[] = $search_like;
+        $params[] = $search_like;
+        $params[] = $search_like;
+        $params[] = $search_like;
     }
 
     if (!empty($filter_phase)) {
@@ -218,6 +228,11 @@ function tes_students_page() {
     if (!empty($filter_class)) {
         $where_clauses[] = "class_name = %s";
         $params[] = $filter_class;
+    }
+
+    if (!empty($filter_group)) {
+        $where_clauses[] = "`group` = %s";
+        $params[] = $filter_group;
     }
 
     if (!empty($where_clauses)) {
@@ -367,6 +382,12 @@ function tes_students_page() {
                     </div>
 
                     <div class="tes-form-group">
+                        <label for="student_group">Group</label>
+                        <input type="text" id="student_group" name="group" placeholder="e.g. A, B, Group 1"
+                               value="<?php echo $edit_student ? esc_attr($edit_student->group) : ''; ?>">
+                    </div>
+
+                    <div class="tes-form-group">
                         <label for="session">Session</label>
                         <input type="text" id="session" name="session" value="<?php echo $edit_student ? esc_attr($edit_student->session) : ''; ?>">
                     </div>
@@ -401,7 +422,7 @@ function tes_students_page() {
             <h3>Import Students from CSV</h3>
             <p class="description">
                 Upload a CSV file with headers matching the database columns.<br>
-                <strong>Allowed Columns:</strong> first_name, last_name, email, class_name, session, batch_name, phase, roll.
+                <strong>Allowed Columns:</strong> first_name, last_name, email, class_name, group, session, batch_name, phase, roll.
             </p>
             
             <form id="tes-import-form" enctype="multipart/form-data">
@@ -434,11 +455,18 @@ function tes_students_page() {
                     <?php endforeach; ?>
                 </select>
 
-                <input type="text" name="s" value="<?php echo esc_attr($search_term); ?>" placeholder="Search by Student Name..." style="width: 250px;">
+                <select name="filter_group" style="min-width: 140px;">
+                    <option value="">All Groups</option>
+                    <?php foreach($groups as $grp): ?>
+                        <option value="<?php echo esc_attr($grp); ?>" <?php selected($filter_group, $grp); ?>><?php echo esc_html($grp); ?></option>
+                    <?php endforeach; ?>
+                </select>
+
+                <input type="text" name="s" value="<?php echo esc_attr($search_term); ?>" placeholder="Search by Student Name, Roll or Group..." style="width: 250px;">
                 
                 <button type="submit" class="button button-secondary">Filter</button>
                 
-                <?php if (!empty($search_term) || !empty($filter_phase) || !empty($filter_class)): ?>
+                <?php if (!empty($search_term) || !empty($filter_phase) || !empty($filter_class) || !empty($filter_group)): ?>
                     <a href="<?php echo admin_url('admin.php?page=tes-students'); ?>" class="button">Reset</a>
                 <?php endif; ?>
             </form>
@@ -463,6 +491,7 @@ function tes_students_page() {
                             <th>Email</th>
                             <th>Password</th>
                             <th>Class</th>
+                            <th>Group</th>
                             <th>Session</th>
                             <th>Batch</th>
                             <th>Phase</th>
@@ -480,6 +509,7 @@ function tes_students_page() {
                                 <td><?php echo esc_html($student->email); ?></td>
                                 <td><code><?php echo (strpos($student->password, '$P$') === 0 || strpos($student->password, '$H$') === 0) ? '(Hidden/Hashed)' : esc_html($student->password); ?></code></td>
                                 <td><?php echo esc_html($student->class_name); ?></td>
+                                <td><strong><?php echo esc_html($student->group ? $student->group : '-'); ?></strong></td>
                                 <td><?php echo esc_html($student->session); ?></td>
                                 <td><?php echo esc_html($student->batch_name); ?></td>
                                 <td><?php echo esc_html($student->phase); ?></td>
@@ -540,7 +570,7 @@ function tes_students_page() {
     jQuery(document).ready(function($) {
         $('#tes-download-students-csv').on('click', function() {
             var csv = [];
-            var header = ["Student Name", "Username", "Email", "Password", "Class", "Session", "Batch", "Phase", "Roll"];
+            var header = ["Student Name", "Username", "Email", "Password", "Class", "Group", "Session", "Batch", "Phase", "Roll"];
             csv.push(header.join(","));
 
             // Rows

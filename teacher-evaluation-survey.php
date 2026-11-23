@@ -100,10 +100,10 @@ function tes_update_db_schema() {
 
     $students_table = $wpdb->prefix . 'tes_students';
     if ($wpdb->get_var("SHOW TABLES LIKE '$students_table'")) {
-        $new_cols = ['session', 'batch_name', 'phase', 'roll', 'class_name'];
+        $new_cols = ['session', 'batch_name', 'phase', 'roll', 'class_name', 'group'];
         foreach ($new_cols as $col) {
             if (empty($wpdb->get_results("SHOW COLUMNS FROM $students_table LIKE '$col'"))) {
-                $wpdb->query("ALTER TABLE $students_table ADD COLUMN $col VARCHAR(100) NULL");
+                $wpdb->query("ALTER TABLE $students_table ADD COLUMN `$col` VARCHAR(100) NULL");
             }
         }
         if (empty($wpdb->get_results("SHOW COLUMNS FROM $students_table LIKE 'email'"))) {
@@ -630,10 +630,13 @@ function tes_import_students() {
         return strtolower(str_replace(' ', '_', $h));
     }, $headers);
 
-    $allowed_cols = ['first_name', 'last_name', 'student_name', 'username', 'email', 'class_name', 'session', 'batch_name', 'phase', 'roll'];
+    $allowed_cols = ['first_name', 'last_name', 'student_name', 'username', 'email', 'class_name', 'session', 'batch_name', 'phase', 'roll', 'group'];
     $col_indexes = [];
 
     foreach ($headers as $index => $header) {
+        if ($header === 'student_group' || $header === 'group_name') {
+            $header = 'group';
+        }
         if (in_array($header, $allowed_cols)) {
             $col_indexes[$header] = $index;
         }

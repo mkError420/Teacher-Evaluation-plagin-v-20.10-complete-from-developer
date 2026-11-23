@@ -407,7 +407,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
 
                 $submissions = $wpdb->get_results($wpdb->prepare(
                     "SELECT s.id, s.student_id, s.student_name, s.answers, s.comment, s.submission_date,
-                            st.roll, st.phase as student_phase, st.class_name as student_class, st.batch_name, st.session, st.department as student_dept
+                            st.roll, st.phase as student_phase, st.class_name as student_class, st.batch_name, st.session, st.department as student_dept, st.`group` as student_group
                      FROM $submissions_table s 
                      LEFT JOIN {$wpdb->prefix}tes_students st ON (s.student_id = st.id OR (s.student_id IS NULL AND s.student_name = st.student_name))
                      WHERE s.survey_id = %d
@@ -506,6 +506,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                 'phase'          => !empty($sub->student_phase) ? $sub->student_phase : (!empty($survey_details->phase) ? $survey_details->phase : ''),
                                 'batch'          => !empty($sub->batch_name) ? $sub->batch_name : '',
                                 'session'        => !empty($sub->session) ? $sub->session : '',
+                                'group'          => !empty($sub->student_group) ? $sub->student_group : '',
                                 'details'        => $student_details_list
                             ];
                         }
@@ -1157,7 +1158,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
             html += '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; text-align: left;">';
             html += '<div style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 4px;">Student Academic Info</div>';
             html += '<div style="font-size: 12.5px; color: #334155; line-height: 1.6;">';
-            html += '<div><strong>Class:</strong> ' + $('<div>').text(data.class || 'N/A').html() + '</div>';
+            html += '<div><strong>Class:</strong> ' + $('<div>').text(data.class || 'N/A').html() + (data.group ? ' | <strong>Group:</strong> ' + $('<div>').text(data.group).html() : '') + '</div>';
             html += '<div><strong>Phase:</strong> ' + $('<div>').text(data.phase || 'N/A').html() + (data.batch ? ' | <strong>Batch:</strong> ' + $('<div>').text(data.batch).html() : '') + '</div>';
             html += '<div><strong>Session:</strong> ' + $('<div>').text(data.session || 'N/A').html() + '</div>';
             html += '</div></div>';

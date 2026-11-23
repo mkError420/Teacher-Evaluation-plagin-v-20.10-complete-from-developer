@@ -55,6 +55,7 @@ function tes_create_tables() {
         batch_name VARCHAR(100),
         phase VARCHAR(100),
         roll VARCHAR(100),
+        `group` VARCHAR(100) NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     ) $charset;";
 

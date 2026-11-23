@@ -131,7 +131,7 @@ function tes_results_page() {
             // Get submissions
             $submissions = $wpdb->get_results(
                 $wpdb->prepare("SELECT s.id, s.student_id, s.student_name, s.answers, s.comment, s.submission_date,
-                                       st.roll, st.phase as student_phase, st.class_name as student_class, st.batch_name, st.session, st.department as student_dept
+                                       st.roll, st.phase as student_phase, st.class_name as student_class, st.batch_name, st.session, st.department as student_dept, st.`group` as student_group
                                 FROM $submissions_table s
                                 LEFT JOIN {$wpdb->prefix}tes_students st ON (s.student_id = st.id OR (s.student_id IS NULL AND s.student_name = st.student_name))
                                 WHERE s.survey_id = %d
@@ -238,6 +238,7 @@ function tes_results_page() {
                             'phase'          => !empty($sub->student_phase) ? $sub->student_phase : (!empty($survey_details->phase) ? $survey_details->phase : ''),
                             'batch'          => !empty($sub->batch_name) ? $sub->batch_name : '',
                             'session'        => !empty($sub->session) ? $sub->session : '',
+                            'group'          => !empty($sub->student_group) ? $sub->student_group : '',
                             'details'        => $student_details_list
                         ];
                     }
@@ -965,7 +966,7 @@ function tes_results_page() {
             html += '<div style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 3px 0;">' + $('<div>').text(data.student_name).html() + '</div>';
             html += '<div style="font-size: 12px; color: #475569; line-height: 1.5;">';
             if (data.roll) html += '<div><strong>Roll:</strong> ' + $('<div>').text(data.roll).html() + '</div>';
-            if (data.class) html += '<div><strong>Class:</strong> ' + $('<div>').text(data.class).html() + (data.phase ? ' | <strong>Phase:</strong> ' + $('<div>').text(data.phase).html() : '') + '</div>';
+            if (data.class) html += '<div><strong>Class:</strong> ' + $('<div>').text(data.class).html() + (data.phase ? ' | <strong>Phase:</strong> ' + $('<div>').text(data.phase).html() : '') + (data.group ? ' | <strong>Group:</strong> ' + $('<div>').text(data.group).html() : '') + '</div>';
             if (data.batch) html += '<div><strong>Batch:</strong> ' + $('<div>').text(data.batch).html() + '</div>';
             html += '</div></div>';
 
