@@ -9,21 +9,26 @@ jQuery(function($) {
         return;
     }
 
-    function loadSurveys(className, $form) {
+    function loadSurveys($form) {
+        if (!$form || !$form.length) return;
         $form.find('.tes-no-survey-msg').hide();
 
+        var className = $form.find('select[name="class_name"]').val() || $form.find('.tes-class-auto').val() || '';
+        var phase = $form.find('select[name="phase"]').val() || $form.find('.tes-phase-auto').val() || '';
+        var group = $form.find('input[name="group"]').val() || $form.find('.tes-group-auto').val() || '';
+        var session = $form.find('select[name="session"]').val() || '';
+        var batchName = $form.find('select[name="batch_name"]').val() || '';
+        var studentName = $form.find('input[name="student_name"]').val();
+        var studentId = $form.find('input[name="student_id"]').val();
+
         if (!className) {
-            $form.find('.tes-survey-select').html('<option value="">Select Teacher Survey</option>').hide().prop('required', false);
+            $form.find('.tes-survey-select').html('<option value="">Select Class First</option>').hide().prop('required', false);
             $form.find('.tes-questions-area').empty();
             $form.find('.tes-comment-section').hide();
             return;
         }
 
-        console.log('Sending AJAX request for class:', className);
-        var studentName = $form.find('input[name="student_name"]').val();
-        var studentId = $form.find('input[name="student_id"]').val();
-        var phase = $form.find('input[name="phase"]').val();
-        var group = $form.find('input[name="group"]').val();
+        console.log('Sending AJAX request for surveys:', { class: className, phase: phase, group: group, session: session, batch: batchName });
         
         $.ajax({
             url: tes_ajax.ajax_url,
@@ -34,7 +39,9 @@ jQuery(function($) {
                 student_name: studentName,
                 student_id: studentId,
                 phase: phase,
-                group: group
+                group: group,
+                session: session,
+                batch_name: batchName
             },
             dataType: 'json',
             success: function(response) {
@@ -42,13 +49,14 @@ jQuery(function($) {
                 
                 if (response.success && response.data && response.data.length > 0) {
                     console.log('Found', response.data.length, 'surveys');
-                    var options = '<option value="">Select Teacher Survey</option>';
+                    var options = '<option value="">Select Teacher Survey (' + response.data.length + ' Available)</option>';
                     $.each(response.data, function(i, survey) {
                         console.log('Survey', i, ':', survey);
                         var groupTag = (survey.target_group && survey.target_group.toLowerCase() !== 'all') ? ' (Group ' + survey.target_group + ')' : '';
                         options += '<option value="' + survey.id + '">' + survey.teacher_name + ' - ' + survey.title + groupTag + '</option>';
                     });
                     $form.find('.tes-survey-select').html(options).show().prop('required', true);
+                    $form.find('.tes-no-survey-msg').hide();
                     console.log('Surveys dropdown updated and shown');
                 } else {
                     console.log('No surveys found - success:', response.success, 'data:', response.data);
@@ -67,15 +75,15 @@ jQuery(function($) {
         });
     }
 
-    // Populate surveys when class is selected (legacy support)
-    $(document).on('change', '.tes-class-select', function() {
-        loadSurveys($(this).val(), $(this).closest('form'));
+    // Populate surveys when any filter criteria is changed
+    $(document).on('change', '.tes-survey-filter, .tes-class-select', function() {
+        loadSurveys($(this).closest('form'));
     });
 
-    // Auto-load surveys if class is pre-set
-    var $autoClass = $('.tes-class-auto');
-    if ($autoClass.length > 0) {
-        loadSurveys($autoClass.val(), $autoClass.closest('form'));
+    // Auto-load surveys if form exists
+    var $activeSurveyForm = $('form.tes-survey-form');
+    if ($activeSurveyForm.length > 0) {
+        loadSurveys($activeSurveyForm);
     }
 
     // Load questions when survey is selected

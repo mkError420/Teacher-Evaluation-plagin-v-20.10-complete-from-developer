@@ -183,6 +183,39 @@ function tes_student_survey_shortcode() {
         if (!$current_student) $student_id = 0;
     }
 
+    // Fetch unique options for student selection controls
+    $classes = $wpdb->get_col("
+        SELECT DISTINCT class_name FROM (
+            SELECT class_name FROM {$wpdb->prefix}tes_teachers WHERE class_name != ''
+            UNION
+            SELECT class_name FROM {$wpdb->prefix}tes_students WHERE class_name != ''
+        ) AS c ORDER BY class_name ASC
+    ");
+    if ($current_student && !empty($current_student->class_name) && !in_array($current_student->class_name, $classes)) {
+        array_unshift($classes, $current_student->class_name);
+    }
+
+    $sessions = $wpdb->get_col("SELECT DISTINCT session FROM {$wpdb->prefix}tes_students WHERE session != '' ORDER BY session DESC");
+    if ($current_student && !empty($current_student->session) && !in_array($current_student->session, $sessions)) {
+        array_unshift($sessions, $current_student->session);
+    }
+
+    $batches = $wpdb->get_col("SELECT DISTINCT batch_name FROM {$wpdb->prefix}tes_students WHERE batch_name != '' ORDER BY batch_name ASC");
+    if ($current_student && !empty($current_student->batch_name) && !in_array($current_student->batch_name, $batches)) {
+        array_unshift($batches, $current_student->batch_name);
+    }
+
+    $phases = $wpdb->get_col("
+        SELECT DISTINCT phase FROM (
+            SELECT phase FROM {$wpdb->prefix}tes_teachers WHERE phase != ''
+            UNION
+            SELECT phase FROM {$wpdb->prefix}tes_students WHERE phase != ''
+        ) AS p ORDER BY phase ASC
+    ");
+    if ($current_student && !empty($current_student->phase) && !in_array($current_student->phase, $phases)) {
+        array_unshift($phases, $current_student->phase);
+    }
+
     ob_start();
 
     if (!$student_id) {
@@ -356,18 +389,70 @@ function tes_student_survey_shortcode() {
             <input type="hidden" name="student_name" value="<?php echo esc_attr($current_student->student_name); ?>">
             <input type="hidden" name="student_id" value="<?php echo esc_attr($current_student->id); ?>">
 
-            <div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea; font-size: 16px;">
-                <strong>Class:</strong> <?php echo esc_html($current_student->class_name); ?>
-                <br>
-                <strong>Phase:</strong> <?php echo esc_html($current_student->phase); ?>
-                <?php if (!empty($current_student->group)): ?>
-                    <br>
-                    <strong>Group:</strong> <?php echo esc_html($current_student->group); ?>
-                <?php endif; ?>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+                <div style="font-size: 13.5px; font-weight: 700; color: #1e293b; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <span>Evaluation Criteria Selection</span>
+                    <?php if (!empty($current_student->group)): ?>
+                        <span style="background: #e0f2fe; color: #0369a1; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid #bae6fd;">
+                            Assigned Group: <?php echo esc_html($current_student->group); ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 12px;">
+                    <div>
+                        <label for="tes_filter_class" style="font-weight: 600; font-size: 12px; color: #475569; margin-bottom: 4px; display: block;">Class *</label>
+                        <select name="class_name" id="tes_filter_class" class="tes-class-select tes-survey-filter" required style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;">
+                            <option value="">Select Class</option>
+                            <?php foreach ($classes as $c): ?>
+                                <option value="<?php echo esc_attr($c); ?>" <?php selected($current_student->class_name, $c); ?>><?php echo esc_html($c); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="tes_filter_group" style="font-weight: 600; font-size: 12px; color: #475569; margin-bottom: 4px; display: block;">Group <span style="font-size: 10px; color: #0284c7; font-weight: 700;">(Locked)</span></label>
+                        <select name="group_display" id="tes_filter_group" class="tes-group-select" disabled style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #f1f5f9; cursor: not-allowed; color: #0f172a; font-weight: 600;">
+                            <?php if (!empty($current_student->group)): ?>
+                                <option value="<?php echo esc_attr($current_student->group); ?>" selected>Group: <?php echo esc_html($current_student->group); ?></option>
+                            <?php else: ?>
+                                <option value="" selected>No Group Assigned</option>
+                            <?php endif; ?>
+                        </select>
+                        <input type="hidden" name="group" class="tes-group-input" value="<?php echo esc_attr($current_student->group); ?>">
+                    </div>
+
+                    <div>
+                        <label for="tes_filter_session" style="font-weight: 600; font-size: 12px; color: #475569; margin-bottom: 4px; display: block;">Session</label>
+                        <select name="session" id="tes_filter_session" class="tes-session-select tes-survey-filter" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;">
+                            <option value="">Select Session</option>
+                            <?php foreach ($sessions as $s): ?>
+                                <option value="<?php echo esc_attr($s); ?>" <?php selected($current_student->session, $s); ?>><?php echo esc_html($s); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="tes_filter_batch" style="font-weight: 600; font-size: 12px; color: #475569; margin-bottom: 4px; display: block;">Batch</label>
+                        <select name="batch_name" id="tes_filter_batch" class="tes-batch-select tes-survey-filter" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;">
+                            <option value="">Select Batch</option>
+                            <?php foreach ($batches as $b): ?>
+                                <option value="<?php echo esc_attr($b); ?>" <?php selected($current_student->batch_name, $b); ?>><?php echo esc_html($b); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="tes_filter_phase" style="font-weight: 600; font-size: 12px; color: #475569; margin-bottom: 4px; display: block;">Phase</label>
+                        <select name="phase" id="tes_filter_phase" class="tes-phase-select tes-survey-filter" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; background: #fff;">
+                            <option value="">Select Phase</option>
+                            <?php foreach ($phases as $p): ?>
+                                <option value="<?php echo esc_attr($p); ?>" <?php selected($current_student->phase, $p); ?>><?php echo esc_html($p); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
             </div>
-            <input type="hidden" name="class_name" class="tes-class-auto" value="<?php echo esc_attr($current_student->class_name); ?>">
-            <input type="hidden" name="phase" class="tes-phase-auto" value="<?php echo esc_attr($current_student->phase); ?>">
-            <input type="hidden" name="group" class="tes-group-auto" value="<?php echo esc_attr($current_student->group); ?>">
 
             <div class="tes-no-survey-msg" style="display:none; color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; padding: 10px; margin-bottom: 15px; border-radius: 8px;">
                 No survey available now

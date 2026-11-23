@@ -205,6 +205,31 @@ function tes_load_questions() {
     global $wpdb;
 
     $survey_id = intval($_POST['survey_id']);
+    if (!$survey_id) {
+        wp_send_json_error('Invalid survey.');
+    }
+
+    // Verify group access if a student is logged in
+    $student_id = tes_get_student_login_id();
+    if ($student_id > 0) {
+        $student_group = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
+        $survey_info = $wpdb->get_row($wpdb->prepare(
+            "SELECT s.id, s.`group` as survey_group, t.`group` as teacher_group 
+             FROM {$wpdb->prefix}tes_surveys s 
+             INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id 
+             WHERE s.id = %d", 
+            $survey_id
+        ));
+        if ($survey_info) {
+            $required_group = !empty($survey_info->survey_group) ? trim($survey_info->survey_group) : trim((string)$survey_info->teacher_group);
+            if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
+                if (empty($student_group) || strcasecmp(trim($student_group), $required_group) !== 0) {
+                    wp_send_json_error('Access restricted: You cannot access surveys outside your assigned group (' . esc_html($student_group) . ').');
+                }
+            }
+        }
+    }
+
     $questions = $wpdb->get_results(
         $wpdb->prepare(
             "SELECT * FROM {$wpdb->prefix}tes_questions WHERE survey_id = %d",
