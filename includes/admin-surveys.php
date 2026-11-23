@@ -7,6 +7,15 @@ function tes_surveys_page() {
     $teachers_table = $wpdb->prefix . 'tes_teachers';
     $surveys_table  = $wpdb->prefix . 'tes_surveys';
 
+    // Auto-assign questions to existing survey with 0 questions
+    if (isset($_GET['auto_assign_questions'])) {
+        $target_id = intval($_GET['auto_assign_questions']);
+        if ($target_id > 0) {
+            $inserted = tes_assign_default_questions_to_survey($target_id);
+            echo '<div class="updated notice is-dismissible"><p>Successfully set ' . intval($inserted) . ' questions on survey from Survey Question Builder. <a href="' . esc_url(admin_url('admin.php?page=tes-questions&survey_id=' . $target_id)) . '">View in Survey Question Builder &rarr;</a></p></div>';
+        }
+    }
+
     // Add/Edit survey
     if (
         isset($_POST['tes_save_survey']) &&
@@ -19,10 +28,20 @@ function tes_surveys_page() {
         ];
         if (!empty($_POST['survey_id'])) {
             $wpdb->update($surveys_table, $data, ['id' => intval($_POST['survey_id'])]);
-            echo '<div class="updated notice"><p>Survey updated successfully.</p></div>';
+            echo '<div class="updated notice is-dismissible"><p>Survey updated successfully.</p></div>';
         } else {
             $wpdb->insert($surveys_table, $data);
-            echo '<div class="updated notice"><p>Survey created successfully.</p></div>';
+            $new_survey_id = $wpdb->insert_id;
+
+            // Automatically set survey questions from Survey Question Builder
+            $q_count = tes_assign_default_questions_to_survey($new_survey_id);
+
+            // Redirect and set at Survey Question Builder page
+            $target_url = admin_url('admin.php?page=tes-questions&survey_id=' . $new_survey_id . '&survey_created=1&q_count=' . $q_count);
+            echo '<script type="text/javascript">window.location.href = ' . json_encode($target_url) . ';</script>';
+            echo '<noscript><meta http-equiv="refresh" content="0;url=' . esc_url($target_url) . '"></noscript>';
+            echo '<div class="updated notice is-dismissible"><p>Survey created successfully with ' . intval($q_count) . ' questions automatically populated from Survey Question Builder. Redirecting to Survey Question Builder... <a href="' . esc_url($target_url) . '">Click here if not redirected</a>.</p></div>';
+            return;
         }
     }
 
@@ -52,7 +71,8 @@ function tes_surveys_page() {
     $phases = $wpdb->get_col("SELECT DISTINCT phase FROM $teachers_table WHERE phase != '' ORDER BY phase");
     $classes = $wpdb->get_col("SELECT DISTINCT class_name FROM $teachers_table WHERE class_name != '' ORDER BY class_name");
     $surveys_query = "
-        SELECT s.*, t.name AS teacher_name, t.department, t.phase, t.class_name
+        SELECT s.*, t.name AS teacher_name, t.department, t.phase, t.class_name,
+               (SELECT COUNT(*) FROM {$wpdb->prefix}tes_questions q WHERE q.survey_id = s.id) AS questions_count
         FROM $surveys_table s
         LEFT JOIN $teachers_table t ON s.teacher_id = t.id
     ";
@@ -152,6 +172,7 @@ function tes_surveys_page() {
                     <th>Teacher</th>
                     <th>Phase</th>
                     <th>Class</th>
+                    <th>Questions</th>
                     <th>Date</th>
                     <th>Actions</th>
                 </tr>
@@ -165,15 +186,27 @@ function tes_surveys_page() {
                         <td><?php echo esc_html($s->teacher_name . ' (' . $s->department . ')'); ?></td>
                         <td><?php echo esc_html($s->phase); ?></td>
                         <td><?php echo esc_html($s->class_name); ?></td>
+                        <td>
+                            <?php if ($s->questions_count > 0): ?>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=tes-questions&survey_id=' . $s->id)); ?>" class="button button-secondary button-small" style="font-weight: 600; color: #0284c7;" title="View and manage questions in Question Builder">
+                                    &#9998; <?php echo intval($s->questions_count); ?> Questions
+                                </a>
+                            <?php else: ?>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=tes-surveys&auto_assign_questions=' . $s->id)); ?>" class="button button-primary button-small" style="font-size: 11px;" title="Set standard questions from Survey Question Builder">
+                                    &#9889; Set Questions
+                                </a>
+                            <?php endif; ?>
+                        </td>
                         <td><?php echo esc_html($s->created_at); ?></td>
                         <td>
                             <a href="?page=tes-surveys&edit_survey=<?php echo $s->id; ?>" class="button button-secondary">Edit</a>
+                            <a href="<?php echo esc_url(admin_url('admin.php?page=tes-questions&survey_id=' . $s->id)); ?>" class="button button-secondary" title="Survey Question Builder">Questions</a>
                             <a href="?page=tes-surveys&delete_survey=<?php echo $s->id; ?>" class="button button-secondary" onclick="return confirm('Are you sure?')">Delete</a>
                         </td>
                     </tr>
                 <?php endforeach; else: ?>
                     <tr>
-                        <td colspan="7">No surveys created yet.</td>
+                        <td colspan="9">No surveys created yet.</td>
                     </tr>
                 <?php endif; ?>
             </tbody>

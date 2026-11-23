@@ -25,7 +25,18 @@ function tes_questions_page() {
             $wpdb->update($surveys_table, ['last_updated' => current_time('mysql')], ['id' => $survey_id]);
         }
         
-        echo '<div class="updated notice"><p>Question deleted.</p></div>';
+        echo '<div class="updated notice is-dismissible"><p>Question deleted.</p></div>';
+    }
+
+    /* -------------------------
+       AUTO ASSIGN QUESTIONS
+    --------------------------*/
+    if (isset($_GET['auto_assign_questions'])) {
+        $target_id = intval($_GET['auto_assign_questions']);
+        if ($target_id > 0) {
+            $inserted = tes_assign_default_questions_to_survey($target_id);
+            echo '<div class="updated notice is-dismissible"><p>Successfully set ' . intval($inserted) . ' questions on survey from Survey Question Builder.</p></div>';
+        }
     }
 
     /* -------------------------
@@ -48,13 +59,29 @@ function tes_questions_page() {
             $wpdb->query("UPDATE $surveys_table SET last_updated = NOW() WHERE id IN ($survey_ids_string)");
         }
         
-        echo '<div class="updated notice"><p>' . count($ids) . ' questions deleted successfully.</p></div>';
+        echo '<div class="updated notice is-dismissible"><p>' . count($ids) . ' questions deleted successfully.</p></div>';
     }
 
-    // Handle Search
+    // Handle Search and Active Selection
     $search_term = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
+    $selected_survey_id = isset($_GET['survey_id']) ? intval($_GET['survey_id']) : 0;
+    $is_just_created    = !empty($_GET['survey_created']);
+    $created_q_count    = isset($_GET['q_count']) ? intval($_GET['q_count']) : 0;
 
-    $surveys = $wpdb->get_results("SELECT * FROM $surveys_table");
+    $surveys = $wpdb->get_results("
+        SELECT s.*, t.name AS teacher_name, t.department, t.phase, t.class_name
+        FROM $surveys_table s
+        LEFT JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id
+        ORDER BY s.id DESC
+    ");
+
+    $surveys_by_id = [];
+    if ($surveys) {
+        foreach ($surveys as $s) {
+            $surveys_by_id[$s->id] = $s;
+        }
+    }
+
     $questions_query = "
         SELECT q.*, s.title AS survey_title
         FROM $questions_table q
@@ -66,12 +93,44 @@ function tes_questions_page() {
         $questions_query .= $wpdb->prepare(" WHERE s.title LIKE %s", $like);
     }
 
-    $questions_query .= " ORDER BY s.title ASC, q.id DESC";
+    $questions_query .= " ORDER BY s.id DESC, q.id ASC";
     $questions = $wpdb->get_results($questions_query);
     ?>
 
     <div class="wrap">
         <h1>Survey Question Builder</h1>
+
+        <?php if ($is_just_created && $selected_survey_id > 0): 
+            $created_survey = isset($surveys_by_id[$selected_survey_id]) ? $surveys_by_id[$selected_survey_id] : null;
+        ?>
+            <div class="updated notice is-dismissible" style="border-left: 4px solid #0284c7; background: #ffffff; padding: 16px 20px; margin: 18px 0 22px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 20px; color: #0284c7;">&#10004;</span>
+                            <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #0f172a;">
+                                Survey Automatically Set with Questions!
+                            </h3>
+                        </div>
+                        <p style="margin: 6px 0 0; font-size: 13.5px; color: #475569;">
+                            Survey <strong>"<?php echo esc_html($created_survey ? $created_survey->title : 'New Survey'); ?>"</strong> 
+                            <?php if ($created_survey && $created_survey->teacher_name): ?>
+                                (Teacher: <strong><?php echo esc_html($created_survey->teacher_name); ?></strong><?php echo $created_survey->department ? ' - ' . esc_html($created_survey->department) : ''; ?>)
+                            <?php endif; ?>
+                            has been set at Survey Question Builder with <strong><?php echo $created_q_count > 0 ? $created_q_count : 'all'; ?> standard questions</strong> automatically populated.
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=tes-surveys')); ?>" class="button button-secondary" style="font-weight: 600;">
+                            &larr; Create Another Teacher Survey
+                        </a>
+                        <a href="#tes-survey-section-<?php echo $selected_survey_id; ?>" class="button button-primary" style="background: #0284c7; border-color: #0284c7; font-weight: 600;">
+                            View Questions Below &darr;
+                        </a>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <form id="tes-add-question-form" style="max-width:800px; margin-bottom:20px;">
             <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('tes_add_question'); ?>">
@@ -79,8 +138,8 @@ function tes_questions_page() {
             <select name="survey_id" id="survey_id" required style="width:100%;margin-bottom:10px;">
                 <option value="">Select Survey</option>
                 <?php foreach ($surveys as $s): ?>
-                    <option value="<?php echo esc_attr($s->id); ?>">
-                        <?php echo esc_html($s->title); ?>
+                    <option value="<?php echo esc_attr($s->id); ?>" <?php selected($selected_survey_id, $s->id); ?>>
+                        <?php echo esc_html($s->title . (!empty($s->teacher_name) ? ' (' . $s->teacher_name . ')' : '')); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -128,14 +187,35 @@ function tes_questions_page() {
         </form>
 
         <?php
-        // Group questions by survey title
+        // Group questions by survey_id
         $grouped_questions = [];
         if ($questions) {
             foreach ($questions as $q) {
-                if (empty($q->survey_title)) {
-                    $q->survey_title = 'Unassigned Questions';
+                $s_id = intval($q->survey_id);
+                $grouped_questions[$s_id][] = $q;
+            }
+        }
+
+        // Determine which surveys to show in accordion
+        $display_survey_ids = [];
+
+        // If active survey selected, prioritize it at the top
+        if ($selected_survey_id > 0 && isset($surveys_by_id[$selected_survey_id])) {
+            $display_survey_ids[] = $selected_survey_id;
+        }
+
+        // Add remaining surveys
+        foreach ($surveys_by_id as $s_id => $s_obj) {
+            if (!in_array($s_id, $display_survey_ids)) {
+                if (!empty($search_term)) {
+                    $match_title = stripos($s_obj->title, $search_term) !== false;
+                    $match_teacher = !empty($s_obj->teacher_name) && stripos($s_obj->teacher_name, $search_term) !== false;
+                    if ($match_title || $match_teacher) {
+                        $display_survey_ids[] = $s_id;
+                    }
+                } else {
+                    $display_survey_ids[] = $s_id;
                 }
-                $grouped_questions[$q->survey_title][] = $q;
             }
         }
         ?>
@@ -149,54 +229,96 @@ function tes_questions_page() {
         </div>
 
         <div id="tes-questions-accordion">
-            <?php if (!empty($grouped_questions)): foreach ($grouped_questions as $survey_title => $questions_in_survey): 
-                // Auto-expand if searching
-                $is_expanded = !empty($search_term);
+            <?php if (!empty($display_survey_ids)): foreach ($display_survey_ids as $s_id): 
+                $s_info = isset($surveys_by_id[$s_id]) ? $surveys_by_id[$s_id] : null;
+                $survey_title = $s_info ? $s_info->title : 'Survey #' . $s_id;
+                $teacher_info = $s_info && !empty($s_info->teacher_name) ? $s_info->teacher_name . (!empty($s_info->department) ? ' (' . $s_info->department . ')' : '') : '';
+                $questions_in_survey = isset($grouped_questions[$s_id]) ? $grouped_questions[$s_id] : [];
+                $q_count = count($questions_in_survey);
+
+                // Auto-expand if searching or if it is the actively selected/just created survey
+                $is_selected = ($selected_survey_id > 0 && $s_id === $selected_survey_id);
+                $is_expanded = (!empty($search_term) || $is_selected);
                 $container_style = $is_expanded ? 'display: block;' : 'display: none;';
                 $title_class = $is_expanded ? 'tes-survey-title active' : 'tes-survey-title';
+                $section_border = $is_selected ? 'border: 2px solid #0284c7; box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);' : 'border: 1px solid #ccd0d4;';
             ?>
-                <div class="tes-survey-section">
+                <div class="tes-survey-section" id="tes-survey-section-<?php echo esc_attr($s_id); ?>" style="<?php echo $section_border; ?>">
                     <h3 class="<?php echo $title_class; ?>">
-                        <span><?php echo esc_html($survey_title); ?> (<?php echo count($questions_in_survey); ?> questions)</span>
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span style="font-weight: 700; color: #0f172a;"><?php echo esc_html($survey_title); ?></span>
+                            <?php if (!empty($teacher_info)): ?>
+                                <span style="color: #64748b; font-size: 12.5px; font-weight: normal;">&bull; <?php echo esc_html($teacher_info); ?></span>
+                            <?php endif; ?>
+                            <?php if ($q_count > 0): ?>
+                                <span style="background: #e2e8f0; color: #334155; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;">
+                                    <?php echo $q_count; ?> questions
+                                </span>
+                            <?php else: ?>
+                                <span style="background: #fef3c7; color: #b45309; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px;">
+                                    0 questions
+                                </span>
+                            <?php endif; ?>
+                            <?php if ($is_selected): ?>
+                                <span style="background: #0284c7; color: #ffffff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;">
+                                    Active / Set
+                                </span>
+                            <?php endif; ?>
+                        </div>
                         <span class="dashicons dashicons-arrow-down-alt2 toggle-icon"></span>
                     </h3>
                     <div class="tes-questions-table-container" style="<?php echo $container_style; ?>">
-                        <table class="widefat striped">
-                            <thead>
-                                <tr>
-                                    <td class="manage-column column-cb check-column"><input type="checkbox" class="select-all-survey-questions"></td>
-                                    <th>Type</th>
-                                    <th>Question</th>
-                                    <th>Sub Question</th>
-                                    <th>Options</th>
-                                    <th>Date</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($questions_in_survey as $q): ?>
+                        <?php if ($q_count > 0): ?>
+                            <table class="widefat striped">
+                                <thead>
                                     <tr>
-                                        <th scope="row" class="check-column"><input type="checkbox" name="question_ids[]" value="<?php echo esc_attr($q->id); ?>"></th>
-                                        <td><?php echo esc_html($q->question_type); ?></td>
-                                        <td><?php echo esc_html($q->question_text); ?></td>
-                                        <td><?php echo esc_html($q->sub_question_title); ?></td>
-                                        <td><?php echo esc_html($q->options); ?></td>
-                                        <td><?php echo esc_html($q->created_at); ?></td>
-                                        <td>
-                                            <a class="button button-secondary"
-                                               href="?page=tes-questions&delete=<?php echo $q->id; ?>"
-                                               onclick="return confirm('Are you sure you want to delete this question?');">
-                                               Delete
-                                            </a>
-                                        </td>
+                                        <td class="manage-column column-cb check-column"><input type="checkbox" class="select-all-survey-questions"></td>
+                                        <th>Type</th>
+                                        <th>Question</th>
+                                        <th>Sub Question</th>
+                                        <th>Options</th>
+                                        <th>Date</th>
+                                        <th>Action</th>
                                     </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody id="tes-survey-tbody-<?php echo esc_attr($s_id); ?>">
+                                    <?php foreach ($questions_in_survey as $q): ?>
+                                        <tr>
+                                            <th scope="row" class="check-column"><input type="checkbox" name="question_ids[]" value="<?php echo esc_attr($q->id); ?>"></th>
+                                            <td>
+                                                <span style="background: #f1f5f9; color: #334155; font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #e2e8f0;">
+                                                    <?php echo esc_html($q->question_type); ?>
+                                                </span>
+                                            </td>
+                                            <td><?php echo esc_html($q->question_text); ?></td>
+                                            <td><strong><?php echo esc_html($q->sub_question_title); ?></strong></td>
+                                            <td><span style="font-size: 12px; color: #64748b;"><?php echo esc_html($q->options); ?></span></td>
+                                            <td><?php echo esc_html($q->created_at); ?></td>
+                                            <td>
+                                                <a class="button button-secondary button-small"
+                                                   href="?page=tes-questions&delete=<?php echo $q->id; ?><?php echo $selected_survey_id ? '&survey_id=' . $selected_survey_id : ''; ?>"
+                                                   onclick="return confirm('Are you sure you want to delete this question?');">
+                                                   Delete
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        <?php else: ?>
+                            <div style="padding: 16px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 6px; margin-top: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div style="color: #92400e; font-size: 13.5px;">
+                                    This survey has no questions assigned yet.
+                                </div>
+                                <a href="<?php echo esc_url(admin_url('admin.php?page=tes-questions&auto_assign_questions=' . $s_id . '&survey_id=' . $s_id)); ?>" class="button button-primary button-small" style="background: #0284c7; border-color: #0284c7; font-weight: 600;">
+                                    &#9889; Set Questions Automatically from Builder
+                                </a>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             <?php endforeach; else: ?>
-                <div class="card" style="padding: 15px;"><p>No questions found.</p></div>
+                <div class="card" style="padding: 15px;"><p>No surveys or questions found.</p></div>
             <?php endif; ?>
         </div>
         </form>
@@ -249,28 +371,22 @@ function tes_questions_page() {
         <script>
         var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
 
-        var explicitQuestions = [
-            "The teacher gains attention of students at the beginning of the session.",
-            "At the beginning of the session teacher inform about the objectives of the session",
-            "The teacher checks students previous knowledge related to the topic of the class",
-            "Teacher manages the time well ",
-            "Language & pronunciation of the teacher is clear",
-            "Preparation of the audio visual/teaching aids by the teacher is helpful",
-            "Teacher encourages students to speak up and be active in the class",
-            "The teacher emphasizes important point & summarize at the end of the class ",
-            "The teacher provides useful & relevant references /sources for further study",
-            "Teacher assess students learning within the class ",
-            "Teaching learning session of this teacher is cooperative"
-        ];
-
-        var implicitQuestions = [
-            "Teacher is willing to accept his/her own error",
-            "Teacher respects the opinions of students",
-            "The teacher is approachable as per need of students ",
-            "Teachers emphasize good academic environment within the class."
-        ];
+        var explicitQuestions = <?php echo json_encode(tes_get_builder_subquestions('Explicit Issues')); ?>;
+        var implicitQuestions = <?php echo json_encode(tes_get_builder_subquestions('Implicit Issues')); ?>;
 
         jQuery(document).ready(function($) {
+            // Auto scroll to active/newly set survey section
+            <?php if ($selected_survey_id > 0): ?>
+            var $targetSec = $('#tes-survey-section-<?php echo intval($selected_survey_id); ?>');
+            if ($targetSec.length) {
+                setTimeout(function() {
+                    $('html, body').animate({
+                        scrollTop: $targetSec.offset().top - 80
+                    }, 350);
+                }, 150);
+            }
+            <?php endif; ?>
+
             $('#tes-add-question-form').on('submit', function(e) {
                 e.preventDefault();
                 var formData = new FormData(this);
@@ -285,17 +401,26 @@ function tes_questions_page() {
                     success: function(response) {
                         if (response.success) {
                             var data = response.data;
+                            var sId = data.survey_id || $('#survey_id').val();
                             var newRow = '<tr>' +
                                 '<th scope="row" class="check-column"><input type="checkbox" name="question_ids[]" value="' + data.id + '"></th>' +
-                                '<td>' + data.survey_title + '</td>' +
-                                '<td>' + data.question_type + '</td>' +
+                                '<td><span style="background: #f1f5f9; color: #334155; font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #e2e8f0;">' + data.question_type + '</span></td>' +
                                 '<td>' + data.question_text + '</td>' +
-                                '<td>' + (data.sub_question_title || '') + '</td>' +
-                                '<td>' + data.options + '</td>' +
+                                '<td><strong>' + (data.sub_question_title || '') + '</strong></td>' +
+                                '<td><span style="font-size: 12px; color: #64748b;">' + data.options + '</span></td>' +
                                 '<td>' + data.created_at + '</td>' +
-                                '<td><a class="button button-secondary" href="?page=tes-questions&delete=' + data.id + '">Delete</a></td>' +
+                                '<td><a class="button button-secondary button-small" href="?page=tes-questions&delete=' + data.id + '">Delete</a></td>' +
                                 '</tr>';
-                            $('tbody').prepend(newRow);
+
+                            var $targetTbody = $('#tes-survey-tbody-' + sId);
+                            if ($targetTbody.length) {
+                                $targetTbody.prepend(newRow);
+                                var $section = $('#tes-survey-section-' + sId);
+                                $section.find('.tes-questions-table-container').slideDown('fast');
+                                $section.find('.tes-survey-title').addClass('active');
+                            } else {
+                                location.reload();
+                            }
                             
                             // Remove selected option to prevent duplicate addition
                             $("#sub_question_title option:selected").remove();

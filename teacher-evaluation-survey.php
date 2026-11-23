@@ -274,6 +274,170 @@ function tes_load_surveys_by_class() {
     wp_send_json_success($surveys ? $surveys : []);
 }
 
+/**
+ * Get all questions defined for Survey Question Builder
+ * Dynamically aggregates standard template questions and any custom builder questions from database
+ */
+function tes_get_builder_questions() {
+    global $wpdb;
+    $questions_table = $wpdb->prefix . 'tes_questions';
+
+    $explicit_text = 'How well does the teacher teach the core subject?';
+    $implicit_text = 'How well does the teacher model the core values through how he/she behaves with students and with other staff persons?';
+    $default_options = 'Never,Once in a while,Sometimes,Most of the times,Almost always';
+
+    $explicit_subs = [
+        "The teacher gains attention of students at the beginning of the session.",
+        "At the beginning of the session teacher inform about the objectives of the session",
+        "The teacher checks students previous knowledge related to the topic of the class",
+        "Teacher manages the time well ",
+        "Language & pronunciation of the teacher is clear",
+        "Preparation of the audio visual/teaching aids by the teacher is helpful",
+        "Teacher encourages students to speak up and be active in the class",
+        "The teacher emphasizes important point & summarize at the end of the class ",
+        "The teacher provides useful & relevant references /sources for further study",
+        "Teacher assess students learning within the class ",
+        "Teaching learning session of this teacher is cooperative"
+    ];
+
+    $implicit_subs = [
+        "Teacher is willing to accept his/her own error",
+        "Teacher respects the opinions of students",
+        "The teacher is approachable as per need of students ",
+        "Teachers emphasize good academic environment within the class."
+    ];
+
+    $questions = [];
+    $seen = [];
+
+    // 1. Standard Explicit questions from Builder
+    foreach ($explicit_subs as $sub) {
+        $key = 'Explicit Issues||' . trim($sub);
+        if (!isset($seen[$key])) {
+            $seen[$key] = true;
+            $questions[] = [
+                'question_type'      => 'Explicit Issues',
+                'question_text'      => $explicit_text,
+                'sub_question_title' => $sub,
+                'options'            => $default_options
+            ];
+        }
+    }
+
+    // 2. Standard Implicit questions from Builder
+    foreach ($implicit_subs as $sub) {
+        $key = 'Implicit Issues||' . trim($sub);
+        if (!isset($seen[$key])) {
+            $seen[$key] = true;
+            $questions[] = [
+                'question_type'      => 'Implicit Issues',
+                'question_text'      => $implicit_text,
+                'sub_question_title' => $sub,
+                'options'            => $default_options
+            ];
+        }
+    }
+
+    // 3. Dynamically append any custom distinct questions created in Question Builder database
+    if ($wpdb->get_var("SHOW TABLES LIKE '$questions_table'")) {
+        $db_questions = $wpdb->get_results("SELECT DISTINCT question_type, question_text, sub_question_title, options FROM $questions_table WHERE sub_question_title IS NOT NULL AND sub_question_title != '' ORDER BY id ASC");
+        if (!empty($db_questions)) {
+            foreach ($db_questions as $dq) {
+                $type = !empty($dq->question_type) ? $dq->question_type : 'Explicit Issues';
+                $key = trim($type) . '||' . trim($dq->sub_question_title);
+                if (!isset($seen[$key])) {
+                    $seen[$key] = true;
+                    $questions[] = [
+                        'question_type'      => $type,
+                        'question_text'      => !empty($dq->question_text) ? $dq->question_text : ($type === 'Implicit Issues' ? $implicit_text : $explicit_text),
+                        'sub_question_title' => $dq->sub_question_title,
+                        'options'            => !empty($dq->options) ? $dq->options : $default_options
+                    ];
+                }
+            }
+        }
+    }
+
+    return $questions;
+}
+
+/**
+ * Get sub-questions list by question type
+ */
+function tes_get_builder_subquestions($type = 'Explicit Issues') {
+    $all = tes_get_builder_questions();
+    $subs = [];
+    foreach ($all as $q) {
+        if ($q['question_type'] === $type && !empty($q['sub_question_title'])) {
+            $subs[] = $q['sub_question_title'];
+        }
+    }
+    return array_values(array_unique($subs));
+}
+
+/**
+ * Assign all Survey Question Builder questions to a survey automatically
+ */
+function tes_assign_default_questions_to_survey($survey_id) {
+    global $wpdb;
+    $survey_id = intval($survey_id);
+    if ($survey_id <= 0) {
+        return 0;
+    }
+
+    $questions_table = $wpdb->prefix . 'tes_questions';
+    $surveys_table   = $wpdb->prefix . 'tes_surveys';
+
+    // Verify survey exists
+    $survey_exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM $surveys_table WHERE id = %d", $survey_id));
+    if (!$survey_exists) {
+        return 0;
+    }
+
+    // Fetch existing questions for this survey to avoid duplicate inserts
+    $existing = $wpdb->get_results($wpdb->prepare(
+        "SELECT question_type, sub_question_title FROM $questions_table WHERE survey_id = %d",
+        $survey_id
+    ));
+    $existing_keys = [];
+    if (!empty($existing)) {
+        foreach ($existing as $ex) {
+            $existing_keys[trim($ex->question_type) . '||' . trim($ex->sub_question_title)] = true;
+        }
+    }
+
+    $builder_questions = tes_get_builder_questions();
+    $inserted_count = 0;
+
+    foreach ($builder_questions as $q) {
+        $key = trim($q['question_type']) . '||' . trim($q['sub_question_title']);
+        if (isset($existing_keys[$key])) {
+            continue;
+        }
+
+        $res = $wpdb->insert($questions_table, [
+            'survey_id'          => $survey_id,
+            'question_type'      => $q['question_type'],
+            'question_text'      => $q['question_text'],
+            'sub_question_title' => $q['sub_question_title'],
+            'options'            => $q['options'],
+            'created_at'         => current_time('mysql')
+        ]);
+
+        if ($res !== false) {
+            $inserted_count++;
+            $existing_keys[$key] = true;
+        }
+    }
+
+    if ($inserted_count > 0) {
+        $wpdb->update($surveys_table, ['last_updated' => current_time('mysql')], ['id' => $survey_id]);
+    }
+
+    $total_now = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $questions_table WHERE survey_id = %d", $survey_id));
+    return intval($total_now);
+}
+
 function tes_add_question() {
     global $wpdb;
 
@@ -314,6 +478,7 @@ function tes_add_question() {
         $survey_title = $wpdb->get_var($wpdb->prepare("SELECT title FROM {$wpdb->prefix}tes_surveys WHERE id = %d", $survey_id));
         wp_send_json_success([
             'id' => $new_id,
+            'survey_id' => $survey_id,
             'question_text' => $question_text,
             'question_type' => $question_type,
             'sub_question_title' => $sub_question_title,
