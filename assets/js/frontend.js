@@ -23,6 +23,7 @@ jQuery(function($) {
         var studentName = $form.find('input[name="student_name"]').val();
         var studentId = $form.find('input[name="student_id"]').val();
         var phase = $form.find('input[name="phase"]').val();
+        var group = $form.find('input[name="group"]').val();
         
         $.ajax({
             url: tes_ajax.ajax_url,
@@ -32,7 +33,8 @@ jQuery(function($) {
                 class_name: className,
                 student_name: studentName,
                 student_id: studentId,
-                phase: phase
+                phase: phase,
+                group: group
             },
             dataType: 'json',
             success: function(response) {
@@ -43,7 +45,8 @@ jQuery(function($) {
                     var options = '<option value="">Select Teacher Survey</option>';
                     $.each(response.data, function(i, survey) {
                         console.log('Survey', i, ':', survey);
-                        options += '<option value="' + survey.id + '">' + survey.teacher_name + ' - ' + survey.title + '</option>';
+                        var groupTag = (survey.target_group && survey.target_group.toLowerCase() !== 'all') ? ' (Group ' + survey.target_group + ')' : '';
+                        options += '<option value="' + survey.id + '">' + survey.teacher_name + ' - ' + survey.title + groupTag + '</option>';
                     });
                     $form.find('.tes-survey-select').html(options).show().prop('required', true);
                     console.log('Surveys dropdown updated and shown');

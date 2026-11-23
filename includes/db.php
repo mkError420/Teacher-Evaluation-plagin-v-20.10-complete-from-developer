@@ -33,7 +33,8 @@ function tes_create_tables() {
     $sql2 = "CREATE TABLE IF NOT EXISTS $surveys (
         id INT AUTO_INCREMENT PRIMARY KEY,
         teacher_id INT NOT NULL,
-        title VARCHAR(255) NOT NULL
+        title VARCHAR(255) NOT NULL,
+        `group` VARCHAR(100) NULL
     ) $charset;";
 
     // Questions table

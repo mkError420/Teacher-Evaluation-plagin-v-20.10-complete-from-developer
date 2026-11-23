@@ -162,6 +162,9 @@ function tes_update_db_schema() {
 
     $surveys_table = $wpdb->prefix . 'tes_surveys';
     if ($wpdb->get_var("SHOW TABLES LIKE '$surveys_table'")) {
+        if (empty($wpdb->get_results("SHOW COLUMNS FROM $surveys_table LIKE 'group'"))) {
+            $wpdb->query("ALTER TABLE $surveys_table ADD COLUMN `group` VARCHAR(100) NULL");
+        }
         if (empty($wpdb->get_results("SHOW COLUMNS FROM $surveys_table LIKE 'last_updated'"))) {
             $wpdb->query("ALTER TABLE $surveys_table ADD COLUMN last_updated DATETIME NULL");
         }
@@ -238,9 +241,32 @@ function tes_load_surveys_by_class() {
     $student_name = isset($_POST['student_name']) ? sanitize_text_field($_POST['student_name']) : '';
     $student_id = isset($_POST['student_id']) ? intval($_POST['student_id']) : 0;
     $phase = isset($_POST['phase']) ? sanitize_text_field($_POST['phase']) : '';
+    $group = isset($_POST['group']) ? sanitize_text_field($_POST['group']) : '';
+
+    // If student_id or student_name is provided, retrieve the student's group, phase, and class from the database
+    if ($student_id > 0) {
+        $student_obj = $wpdb->get_row($wpdb->prepare("SELECT `group`, phase, class_name FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
+        if ($student_obj) {
+            if (!empty($student_obj->group)) {
+                $group = $student_obj->group;
+            }
+            if (empty($phase) && !empty($student_obj->phase)) {
+                $phase = $student_obj->phase;
+            }
+            if (empty($class_name) && !empty($student_obj->class_name)) {
+                $class_name = $student_obj->class_name;
+            }
+        }
+    } elseif (!empty($student_name) && empty($group)) {
+        $student_obj = $wpdb->get_row($wpdb->prepare("SELECT `group`, phase, class_name FROM {$wpdb->prefix}tes_students WHERE student_name = %s", $student_name));
+        if ($student_obj && !empty($student_obj->group)) {
+            $group = $student_obj->group;
+        }
+    }
 
     $query = "
-        SELECT DISTINCT s.id, s.title, t.name as teacher_name
+        SELECT DISTINCT s.id, s.title, t.name as teacher_name,
+               COALESCE(NULLIF(s.`group`, ''), t.`group`, '') as target_group
         FROM {$wpdb->prefix}tes_surveys s
         INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id
     ";
@@ -264,6 +290,25 @@ function tes_load_surveys_by_class() {
     if (!empty($phase)) {
         $query .= " AND t.phase = %s";
         $params[] = $phase;
+    }
+
+    // Group filtering:
+    // When student logs in, student will access surveys group wise:
+    // If a student belongs to a specific group (e.g. Group A), they see surveys targeted to Group A,
+    // plus any surveys that are open to all groups (empty or 'all').
+    // If a student has no group, they only see surveys open to all groups (empty or 'all').
+    if (!empty($group)) {
+        $query .= " AND (
+            COALESCE(NULLIF(s.`group`, ''), t.`group`, '') = %s
+            OR COALESCE(NULLIF(s.`group`, ''), t.`group`, '') = ''
+            OR LOWER(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = 'all'
+        )";
+        $params[] = $group;
+    } else {
+        $query .= " AND (
+            COALESCE(NULLIF(s.`group`, ''), t.`group`, '') = ''
+            OR LOWER(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = 'all'
+        )";
     }
 
     $query .= " ORDER BY t.name ASC, s.title ASC";
@@ -540,6 +585,29 @@ function tes_submit_survey() {
             $wpdb->delete($wpdb->prefix . 'tes_submissions', ['id' => $existing_submission->id]);
         } else {
             wp_send_json_error('You have already submitted this survey.');
+        }
+    }
+
+    // Verify group access
+    $survey_info = $wpdb->get_row($wpdb->prepare(
+        "SELECT s.id, s.`group` as survey_group, t.`group` as teacher_group 
+         FROM {$wpdb->prefix}tes_surveys s 
+         INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id 
+         WHERE s.id = %d", 
+        $survey_id
+    ));
+    if ($survey_info) {
+        $required_group = !empty($survey_info->survey_group) ? trim($survey_info->survey_group) : trim((string)$survey_info->teacher_group);
+        if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
+            $student_grp = '';
+            if ($student_id > 0) {
+                $student_grp = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
+            } elseif (!empty($student_name)) {
+                $student_grp = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE student_name = %s", $student_name));
+            }
+            if (empty($student_grp) || strcasecmp(trim($student_grp), $required_group) !== 0) {
+                wp_send_json_error('This survey is only accessible to students of Group ' . $required_group . '.');
+            }
         }
     }
 
@@ -859,12 +927,12 @@ function tes_survey_search_autocomplete() {
     
     // Search for surveys by title
     $results = $wpdb->get_results($wpdb->prepare(
-        "SELECT s.id, s.title, t.name as teacher_name, t.phase, t.class_name
+        "SELECT s.id, s.title, s.`group` as survey_group, t.name as teacher_name, t.phase, t.class_name, t.`group` as teacher_group
          FROM {$wpdb->prefix}tes_surveys s
          LEFT JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id
-         WHERE s.title LIKE %s OR t.name LIKE %s OR t.phase LIKE %s OR t.class_name LIKE %s
+         WHERE s.title LIKE %s OR t.name LIKE %s OR t.phase LIKE %s OR t.class_name LIKE %s OR s.`group` LIKE %s OR t.`group` LIKE %s
          LIMIT 10",
-        $like, $like, $like, $like
+        $like, $like, $like, $like, $like, $like
     ));
     
     wp_send_json_success( $results );

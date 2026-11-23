@@ -138,7 +138,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
     $all_teachers = $wpdb->get_results("SELECT id, name, department FROM $teachers_table WHERE (role != 'advisor' OR role IS NULL) ORDER BY name ASC");
 
     // Get all surveys for dropdown (and list)
-    $surveys_query = "SELECT s.*, t.name as teacher_name, t.department, t.phase, t.class_name 
+    $surveys_query = "SELECT s.*, s.`group` as survey_group, t.name as teacher_name, t.department, t.phase, t.class_name, t.`group` as teacher_group 
                       FROM $surveys_table s 
                       LEFT JOIN $teachers_table t ON s.teacher_id = t.id";
     
@@ -243,6 +243,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Teacher & Department</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Phase</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Class</th>
+                                <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Group</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center;">Average Score</th>
                                 <th style="padding: 12px 16px; color: #475569; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; text-align: right;">Action</th>
                             </tr>
@@ -334,6 +335,17 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                             <?php echo esc_html($survey->class_name ?: 'N/A'); ?>
                                         </span>
                                     </td>
+                                    <td style="padding: 14px 16px;">
+                                        <?php 
+                                        $s_grp = !empty($survey->survey_group) ? $survey->survey_group : (!empty($survey->teacher_group) ? $survey->teacher_group : '');
+                                        if (!empty($s_grp) && strcasecmp($s_grp, 'all') !== 0): ?>
+                                            <span style="background: #e0f2fe; color: #0369a1; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 4px; border: 1px solid #bae6fd;">
+                                                Group <?php echo esc_html($s_grp); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="color: #94a3b8; font-size: 12px;">All</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td style="padding: 14px 16px; text-align: center;">
                                         <?php if ($total_score_count > 0): 
                                             $badge_bg = $avg_score >= 3.5 ? '#ecfdf5' : ($avg_score >= 2.5 ? '#fef3c7' : '#fee2e2');
@@ -370,7 +382,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
         <?php else: 
             // --- View Survey Results ---
             $survey_details = $wpdb->get_row($wpdb->prepare(
-                "SELECT s.title, t.name, t.department, t.class_name, t.phase 
+                "SELECT s.title, s.`group` as survey_group, t.name, t.department, t.class_name, t.phase, t.`group` as teacher_group 
                  FROM $surveys_table s 
                  LEFT JOIN $teachers_table t ON s.teacher_id = t.id 
                  WHERE s.id = %d", 
@@ -516,12 +528,17 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
 
                     // Calculate eligible students
                     $total_eligible = 0;
+                    $eff_group = !empty($survey_details->survey_group) ? trim($survey_details->survey_group) : (!empty($survey_details->teacher_group) ? trim($survey_details->teacher_group) : '');
                     if ($survey_details && !empty($survey_details->class_name)) {
                         $eligible_query = "SELECT COUNT(*) FROM {$wpdb->prefix}tes_students WHERE class_name = %s";
                         $e_params = [$survey_details->class_name];
                         if (!empty($survey_details->phase)) {
                             $eligible_query .= " AND phase = %s";
                             $e_params[] = $survey_details->phase;
+                        }
+                        if (!empty($eff_group) && strcasecmp($eff_group, 'all') !== 0) {
+                            $eligible_query .= " AND `group` = %s";
+                            $e_params[] = $eff_group;
                         }
                         $total_eligible = $wpdb->get_var($wpdb->prepare($eligible_query, ...$e_params));
                     }
@@ -577,7 +594,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                 </div>
                                 <div style="font-size: 13px; color: #475569; line-height: 1.6;">
                                     <div><strong>Dept:</strong> <?php echo esc_html($survey_details->department); ?></div>
-                                    <div><strong>Class:</strong> <?php echo esc_html($survey_details->class_name); ?> | <strong>Phase:</strong> <?php echo esc_html($survey_details->phase); ?></div>
+                                    <div><strong>Class:</strong> <?php echo esc_html($survey_details->class_name); ?> | <strong>Phase:</strong> <?php echo esc_html($survey_details->phase); ?><?php if (!empty($eff_group) && strcasecmp($eff_group, 'all') !== 0) echo ' | <strong>Group:</strong> ' . esc_html($eff_group); ?></div>
                                 </div>
                             </div>
 

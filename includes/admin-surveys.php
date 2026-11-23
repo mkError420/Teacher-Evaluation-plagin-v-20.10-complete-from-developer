@@ -22,9 +22,21 @@ function tes_surveys_page() {
         !empty($_POST['survey_title']) &&
         !empty($_POST['teacher_id'])
     ) {
+        $survey_group = isset($_POST['survey_group']) ? sanitize_text_field(wp_unslash($_POST['survey_group'])) : '';
+        if ($survey_group === 'new_group') {
+            $survey_group = isset($_POST['new_survey_group']) ? sanitize_text_field(wp_unslash($_POST['new_survey_group'])) : '';
+        }
+        if (empty($survey_group) && !empty($_POST['teacher_id'])) {
+            $t_grp = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM $teachers_table WHERE id = %d", intval($_POST['teacher_id'])));
+            if (!empty($t_grp)) {
+                $survey_group = $t_grp;
+            }
+        }
+
         $data = [
             'title'      => sanitize_text_field(wp_unslash($_POST['survey_title'])),
-            'teacher_id' => intval($_POST['teacher_id'])
+            'teacher_id' => intval($_POST['teacher_id']),
+            'group'      => $survey_group
         ];
         if (!empty($_POST['survey_id'])) {
             $wpdb->update($surveys_table, $data, ['id' => intval($_POST['survey_id'])]);
@@ -70,8 +82,17 @@ function tes_surveys_page() {
     $teachers = $wpdb->get_results("SELECT * FROM $teachers_table WHERE (role != 'advisor' OR role IS NULL)");
     $phases = $wpdb->get_col("SELECT DISTINCT phase FROM $teachers_table WHERE phase != '' ORDER BY phase");
     $classes = $wpdb->get_col("SELECT DISTINCT class_name FROM $teachers_table WHERE class_name != '' ORDER BY class_name");
+    $groups = $wpdb->get_col("
+        SELECT DISTINCT `group` FROM (
+            SELECT `group` FROM {$wpdb->prefix}tes_students WHERE `group` IS NOT NULL AND `group` != ''
+            UNION
+            SELECT `group` FROM {$wpdb->prefix}tes_teachers WHERE `group` IS NOT NULL AND `group` != ''
+            UNION
+            SELECT `group` FROM $surveys_table WHERE `group` IS NOT NULL AND `group` != '' AND `group` != 'all'
+        ) AS combined_groups ORDER BY `group` ASC
+    ");
     $surveys_query = "
-        SELECT s.*, t.name AS teacher_name, t.department, t.phase, t.class_name,
+        SELECT s.*, s.`group` as survey_group, t.name AS teacher_name, t.department, t.phase, t.class_name, t.`group` as teacher_group,
                (SELECT COUNT(*) FROM {$wpdb->prefix}tes_questions q WHERE q.survey_id = s.id) AS questions_count
         FROM $surveys_table s
         LEFT JOIN $teachers_table t ON s.teacher_id = t.id
@@ -79,7 +100,7 @@ function tes_surveys_page() {
 
     if (!empty($search_term)) {
         $like = '%' . $wpdb->esc_like($search_term) . '%';
-        $surveys_query .= $wpdb->prepare(" WHERE s.title LIKE %s OR t.name LIKE %s OR t.phase LIKE %s OR t.class_name LIKE %s", $like, $like, $like, $like);
+        $surveys_query .= $wpdb->prepare(" WHERE s.title LIKE %s OR t.name LIKE %s OR t.phase LIKE %s OR t.class_name LIKE %s OR s.`group` LIKE %s OR t.`group` LIKE %s", $like, $like, $like, $like, $like, $like);
     }
 
     $surveys_query .= " ORDER BY s.id DESC";
@@ -119,17 +140,42 @@ function tes_surveys_page() {
                 <?php endforeach; ?>
             </select>
 
-            <select name="teacher_id" id="tes_survey_teacher_select" required>
+            <select id="tes_survey_group_filter" style="margin-right: 5px;">
+                <option value="">All Groups</option>
+                <?php foreach ($groups as $g): ?>
+                    <option value="<?php echo esc_attr($g); ?>"><?php echo esc_html($g); ?></option>
+                <?php endforeach; ?>
+            </select>
+
+            <select name="teacher_id" id="tes_survey_teacher_select" required style="margin-right: 5px;">
                 <option value="">Select Teacher</option>
                 <?php foreach ($teachers as $t): ?>
                     <option value="<?php echo esc_attr($t->id); ?>"
                         data-phase="<?php echo esc_attr($t->phase); ?>"
                         data-class="<?php echo esc_attr($t->class_name); ?>"
+                        data-group="<?php echo esc_attr($t->group); ?>"
                         <?php selected($edit_survey ? $edit_survey->teacher_id : '', $t->id); ?>>
                         <?php echo esc_html($t->name . ' (' . $t->department . (!empty($t->phase) ? ' - ' . $t->phase : '') . (!empty($t->class_name) ? ' - ' . $t->class_name : '') . (!empty($t->group) ? ' - Group ' . $t->group : '') . ')'); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
+
+            <select name="survey_group" id="tes_survey_group_select" style="margin-right: 5px; min-width: 140px;">
+                <option value="">Select Group (or Auto from Teacher)</option>
+                <option value="all" <?php selected($edit_survey ? $edit_survey->group : '', 'all'); ?>>All Groups (Open to All)</option>
+                <?php foreach ($groups as $g): ?>
+                    <option value="<?php echo esc_attr($g); ?>" <?php selected($edit_survey ? $edit_survey->group : '', $g); ?>>
+                        Group: <?php echo esc_html($g); ?>
+                    </option>
+                <?php endforeach; ?>
+                <option value="new_group">+ Add New Group</option>
+            </select>
+
+            <input type="text"
+                   name="new_survey_group"
+                   id="new_survey_group_input"
+                   placeholder="Enter new group"
+                   style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; display: none; width: 130px; margin-right: 5px;">
 
             <button type="submit"
                     name="tes_save_survey"
@@ -145,8 +191,8 @@ function tes_surveys_page() {
 
         <form method="get" style="margin-bottom: 15px;">
             <input type="hidden" name="page" value="tes-surveys">
-            <div style="position: relative; display: inline-block; width: 300px;">
-                <input type="text" name="s" id="tes_survey_search_input" value="<?php echo esc_attr($search_term); ?>" placeholder="Search by Survey, Teacher, Phase or Class" style="width: 100%;" autocomplete="off">
+            <div style="position: relative; display: inline-block; width: 320px;">
+                <input type="text" name="s" id="tes_survey_search_input" value="<?php echo esc_attr($search_term); ?>" placeholder="Search by Survey, Teacher, Phase, Class or Group" style="width: 100%;" autocomplete="off">
                 <div id="tes_survey_search_suggestions" style="display:none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccd0d4; z-index: 1000; max-height: 300px; overflow-y: auto; box-shadow: 0 4px 5px rgba(0,0,0,0.1);"></div>
             </div>
             <button type="submit" class="button button-secondary">Search</button>
@@ -172,6 +218,7 @@ function tes_surveys_page() {
                     <th>Teacher</th>
                     <th>Phase</th>
                     <th>Class</th>
+                    <th>Group</th>
                     <th>Questions</th>
                     <th>Date</th>
                     <th>Actions</th>
@@ -186,6 +233,16 @@ function tes_surveys_page() {
                         <td><?php echo esc_html($s->teacher_name . ' (' . $s->department . ')'); ?></td>
                         <td><?php echo esc_html($s->phase); ?></td>
                         <td><?php echo esc_html($s->class_name); ?></td>
+                        <td>
+                            <?php 
+                            $disp_group = !empty($s->survey_group) ? $s->survey_group : (!empty($s->teacher_group) ? $s->teacher_group : '');
+                            if (empty($disp_group) || strcasecmp($disp_group, 'all') === 0) {
+                                echo '<span style="color:#64748b; font-size:12px;">All Groups</span>';
+                            } else {
+                                echo '<span style="background:#e0f2fe; color:#0369a1; font-weight:600; font-size:12px; padding:3px 8px; border-radius:4px; border:1px solid #bae6fd;">Group ' . esc_html($disp_group) . '</span>';
+                            }
+                            ?>
+                        </td>
                         <td>
                             <?php if ($s->questions_count > 0): ?>
                                 <a href="<?php echo esc_url(admin_url('admin.php?page=tes-questions&survey_id=' . $s->id)); ?>" class="button button-secondary button-small" style="font-weight: 600; color: #0284c7;" title="View and manage questions in Question Builder">
@@ -206,7 +263,7 @@ function tes_surveys_page() {
                     </tr>
                 <?php endforeach; else: ?>
                     <tr>
-                        <td colspan="9">No surveys created yet.</td>
+                        <td colspan="10">No surveys created yet.</td>
                     </tr>
                 <?php endif; ?>
             </tbody>
@@ -257,10 +314,12 @@ function tes_surveys_page() {
                         if (response.success && response.data.length > 0) {
                             $.each(response.data, function(i, item) {
                                 var escapedTitle = $('<div>').text(item.title).html();
+                                var effGroup = item.survey_group || item.teacher_group || '';
+                                var meta = (item.teacher_name || 'No Teacher') + (item.phase ? ' (' + item.phase + ')' : '') + (item.class_name ? ' - ' + item.class_name : '') + (effGroup && effGroup.toLowerCase() !== 'all' ? ' - Group ' + effGroup : '');
                                 
                                 var $itemDiv = $('<div class="tes-suggestion-item"></div>');
                                 $itemDiv.attr('data-value', item.title);
-                                $itemDiv.html('<strong>' + escapedTitle + '</strong><br><span style="color:#666; font-size:12px;">' + (item.teacher_name || 'No Teacher') + (item.phase ? ' (' + item.phase + ')' : '') + (item.class_name ? ' - ' + item.class_name : '') + '</span>');
+                                $itemDiv.html('<strong>' + escapedTitle + '</strong><br><span style="color:#666; font-size:12px;">' + meta + '</span>');
                                 
                                 suggestionsBox.append($itemDiv);
                             });
@@ -286,21 +345,24 @@ function tes_surveys_page() {
             }
         });
 
-        // Filter teachers by phase
-        $('#tes_survey_phase_filter, #tes_survey_class_filter').on('change', function() {
+        // Filter teachers by phase, class, and group
+        $('#tes_survey_phase_filter, #tes_survey_class_filter, #tes_survey_group_filter').on('change', function() {
             var phase = $('#tes_survey_phase_filter').val();
             var className = $('#tes_survey_class_filter').val();
+            var group = $('#tes_survey_group_filter').val();
             var $teacherSelect = $('#tes_survey_teacher_select');
             
             $teacherSelect.find('option[value!=""]').each(function() {
                 var $opt = $(this);
                 var optPhase = $opt.data('phase');
                 var optClass = $opt.data('class');
+                var optGroup = $opt.data('group');
                 
                 var matchPhase = !phase || optPhase == phase;
                 var matchClass = !className || optClass == className;
+                var matchGroup = !group || optGroup == group;
                 
-                if (matchPhase && matchClass) {
+                if (matchPhase && matchClass && matchGroup) {
                     $opt.show();
                 } else {
                     $opt.hide();
@@ -311,6 +373,33 @@ function tes_surveys_page() {
             var selectedOption = $teacherSelect.find('option:selected');
             if (selectedOption.css('display') === 'none') {
                 $teacherSelect.val('');
+            }
+        });
+
+        // Auto-select group when teacher is selected
+        $('#tes_survey_teacher_select').on('change', function() {
+            var selectedOption = $(this).find('option:selected');
+            var teacherGroup = selectedOption.data('group');
+            var $groupSelect = $('#tes_survey_group_select');
+
+            if (teacherGroup && (!$groupSelect.val() || $groupSelect.data('auto-set'))) {
+                if ($groupSelect.find('option[value="' + teacherGroup + '"]').length > 0) {
+                    $groupSelect.val(teacherGroup);
+                } else {
+                    $groupSelect.find('option[value="new_group"]').before('<option value="' + teacherGroup + '">Group: ' + teacherGroup + '</option>');
+                    $groupSelect.val(teacherGroup);
+                }
+                $groupSelect.data('auto-set', true);
+                $('#new_survey_group_input').hide();
+            }
+        });
+
+        $('#tes_survey_group_select').on('change', function() {
+            $(this).data('auto-set', false);
+            if ($(this).val() === 'new_group') {
+                $('#new_survey_group_input').show().focus();
+            } else {
+                $('#new_survey_group_input').hide();
             }
         });
 

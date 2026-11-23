@@ -338,7 +338,11 @@ function tes_student_survey_shortcode() {
         <div class="tes-header-info" style="max-width: 800px; margin: 0 auto 10px; display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 10px 15px; border-radius: 8px;">
             <div>
                 <div>Logged in as: <strong><?php echo esc_html($current_student->student_name); ?></strong></div>
-                <div style="font-size: 0.9em; color: #555; margin-top: 2px;"><?php echo esc_html($current_student->class_name); ?><?php if (!empty($current_student->phase)) echo ' - ' . esc_html($current_student->phase); ?></div>
+                <div style="font-size: 0.9em; color: #555; margin-top: 2px;">
+                    <?php echo esc_html($current_student->class_name); ?>
+                    <?php if (!empty($current_student->phase)) echo ' - ' . esc_html($current_student->phase); ?>
+                    <?php if (!empty($current_student->group)) echo ' - Group: ' . esc_html($current_student->group); ?>
+                </div>
             </div>
             <a href="<?php echo esc_url(wp_nonce_url(add_query_arg('tes_action', 'logout'), 'tes_student_logout')); ?>" style="color: #dc3545; text-decoration: none; font-weight: bold; font-size: 14px;">Logout</a>
         </div>
@@ -356,9 +360,14 @@ function tes_student_survey_shortcode() {
                 <strong>Class:</strong> <?php echo esc_html($current_student->class_name); ?>
                 <br>
                 <strong>Phase:</strong> <?php echo esc_html($current_student->phase); ?>
+                <?php if (!empty($current_student->group)): ?>
+                    <br>
+                    <strong>Group:</strong> <?php echo esc_html($current_student->group); ?>
+                <?php endif; ?>
             </div>
             <input type="hidden" name="class_name" class="tes-class-auto" value="<?php echo esc_attr($current_student->class_name); ?>">
             <input type="hidden" name="phase" class="tes-phase-auto" value="<?php echo esc_attr($current_student->phase); ?>">
+            <input type="hidden" name="group" class="tes-group-auto" value="<?php echo esc_attr($current_student->group); ?>">
 
             <div class="tes-no-survey-msg" style="display:none; color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; padding: 10px; margin-bottom: 15px; border-radius: 8px;">
                 No survey available now
