@@ -485,7 +485,6 @@ function tes_teacher_dashboard_shortcode() {
                     $answer_counts = [];
                     $averages = [];
                     $student_averages = [];
-                    $comments = [];
                     $total_sum = 0;
                     $total_count = 0;
 
@@ -498,9 +497,6 @@ function tes_teacher_dashboard_shortcode() {
                     ];
 
                     foreach ($submissions as $sub) {
-                        if (!empty($sub->comment)) {
-                            $comments[] = ['student' => $sub->student_name, 'text' => $sub->comment];
-                        }
                         $answers = maybe_unserialize($sub->answers);
                         if (!is_array($answers)) continue;
 
@@ -792,45 +788,6 @@ function tes_teacher_dashboard_shortcode() {
 
                 <?php endif; ?>
             </div><!-- End #tes-teacher-pdf-content -->
-
-            <!-- Student Comments Section (if available) -->
-            <?php if (!empty($comments)): ?>
-                <div style="background: #ffffff; padding: 22px; margin-top: 25px; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px;">
-                        <div>
-                            <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: #0f172a;">Student Feedback & Comments</h3>
-                            <span style="font-size: 13px; color: #64748b;"><?php echo count($comments); ?> remarks submitted</span>
-                        </div>
-                        <input type="text" id="tes-teacher-comment-search" placeholder="Search comments by student..." style="width: 100%; max-width: 280px; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
-                    </div>
-
-                    <div id="tes-teacher-comments-list" style="display: flex; flex-direction: column; gap: 12px;">
-                        <?php foreach ($comments as $c): ?>
-                            <div class="tes-comment-item" style="padding: 14px 18px; border: 1px solid #f1f5f9; background: #f8fafc; border-radius: 8px; border-left: 4px solid #0284c7;">
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                    <span style="background: #e2e8f0; color: #334155; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
-                                        <?php echo esc_html($c['student']); ?>
-                                    </span>
-                                </div>
-                                <div class="tes-comment-body" style="font-size: 13.5px; color: #334155; line-height: 1.5;">
-                                    <?php echo nl2br(esc_html($c['text'])); ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-                <script>
-                jQuery(document).ready(function($) {
-                    $('#tes-teacher-comment-search').on('keyup', function() {
-                        var value = $(this).val().toLowerCase();
-                        $('#tes-teacher-comments-list .tes-comment-item').filter(function() {
-                            var text = $(this).text().toLowerCase();
-                            $(this).toggle(text.indexOf(value) > -1);
-                        });
-                    });
-                });
-                </script>
-            <?php endif; ?>
 
             <!-- PDF Download Script using html2pdf -->
             <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
