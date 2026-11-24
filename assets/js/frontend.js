@@ -22,19 +22,17 @@ jQuery(function($) {
         var studentId = $form.find('input[name="student_id"]').val();
 
         if (!className) {
-            $form.find('.tes-survey-select').html('<option value="">Select Class First</option>').hide().prop('required', false);
+            $form.find('.tes-survey-select').html('<option value="">Select Class First</option>').hide().prop('required', false).prop('disabled', false);
             $form.find('.tes-questions-area').empty();
             $form.find('.tes-comment-section').hide();
             return;
         }
 
-        if (!group) {
-            $form.find('.tes-survey-select').html('<option value="">Select Group First</option>').hide().prop('required', false);
-            $form.find('.tes-questions-area').empty();
-            $form.find('.tes-comment-section').hide();
-            $form.find('.tes-no-survey-msg').text('Please select your Group above to view surveys.').show();
-            return;
-        }
+        $form.find('.tes-survey-select')
+            .html('<option value="">Loading surveys...</option>')
+            .show()
+            .prop('required', false)
+            .prop('disabled', true);
 
         console.log('Sending AJAX request for surveys:', { class: className, phase: phase, group: group, session: session, batch: batchName });
         
@@ -64,7 +62,7 @@ jQuery(function($) {
                         var groupTag = g ? ' (' + g + ')' : '';
                         options += '<option value="' + survey.id + '">' + survey.teacher_name + ' - ' + survey.title + groupTag + '</option>';
                     });
-                    $form.find('.tes-survey-select').html(options).show().prop('required', true);
+                    $form.find('.tes-survey-select').html(options).show().prop('required', true).prop('disabled', false);
                     $form.find('.tes-no-survey-msg').hide();
                     console.log('Surveys dropdown updated and shown');
 
@@ -74,7 +72,7 @@ jQuery(function($) {
                     }
                 } else {
                     console.log('No surveys found - success:', response.success, 'data:', response.data);
-                    $form.find('.tes-survey-select').html('<option value="">No surveys available</option>').hide().prop('required', false);
+                    $form.find('.tes-survey-select').html('<option value="">No surveys available</option>').hide().prop('required', false).prop('disabled', false);
                     var groupLabel = group ? (group.toLowerCase().indexOf('group') === 0 ? group : 'Group ' + group) : 'this group';
                     $form.find('.tes-no-survey-msg').text('No survey available now for ' + groupLabel).show();
                 }
@@ -84,7 +82,7 @@ jQuery(function($) {
             error: function(xhr, status, error) {
                 console.error('AJAX Error:', status, error);
                 console.error('Response text:', xhr.responseText);
-                $form.find('.tes-survey-select').html('<option value="">Error loading surveys</option>').hide().prop('required', false);
+                $form.find('.tes-survey-select').html('<option value="">Error loading surveys</option>').hide().prop('required', false).prop('disabled', false);
                 alert('Error loading surveys. Please refresh and try again.');
             }
         });
@@ -215,13 +213,13 @@ jQuery(function($) {
             success: function(response) {
                 if (response.success) {
                     $form.parent().find('.tes-success-msg').show();
+                    var selectedGroup = $form.find('select[name="group"]').val();
                     $form[0].reset();
+                    $form.find('select[name="group"]').val(selectedGroup);
                     $form.find('.tes-questions-area').empty();
                     $form.find('.tes-comment-section').hide();
                     
-                    // Reload surveys to remove the one just taken
-                    var className = $form.find('.tes-class-auto').val();
-                    loadSurveys(className, $form);
+                    loadSurveys($form);
 
                     setTimeout(function() {
                         $form.parent().find('.tes-success-msg').fadeOut();

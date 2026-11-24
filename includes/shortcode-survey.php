@@ -30,6 +30,54 @@ function tes_get_student_login_id() {
     return hash_equals($expected_signature, $cookie_parts[1]) ? $student_id : 0;
 }
 
+function tes_normalize_survey_scope_value($value) {
+    return strtolower(preg_replace('/[\s\-_]+/', '', trim((string) $value)));
+}
+
+function tes_normalize_survey_group($value) {
+    $value = trim((string) $value);
+    $value = preg_replace('/^group[\s\-_]*/i', '', $value);
+    return tes_normalize_survey_scope_value($value);
+}
+
+function tes_student_can_access_survey($student, $survey, $selected_group = '') {
+    if (!$student || !$survey || empty($student->class_name) || empty($student->phase)) {
+        return false;
+    }
+
+    if (
+        tes_normalize_survey_scope_value($student->class_name) !== tes_normalize_survey_scope_value($survey->class_name)
+        || tes_normalize_survey_scope_value($student->phase) !== tes_normalize_survey_scope_value($survey->phase)
+    ) {
+        return false;
+    }
+
+    $survey_batch = isset($survey->batch_name) ? trim((string) $survey->batch_name) : '';
+    if ($survey_batch !== '' && strcasecmp($survey_batch, 'all') !== 0) {
+        if (
+            empty($student->batch_name)
+            || tes_normalize_survey_scope_value($student->batch_name) !== tes_normalize_survey_scope_value($survey_batch)
+        ) {
+            return false;
+        }
+    }
+
+    $required_group = !empty($survey->survey_group)
+        ? trim((string) $survey->survey_group)
+        : trim((string) $survey->teacher_group);
+    if ($required_group === '' || strcasecmp($required_group, 'all') === 0) {
+        return true;
+    }
+
+    $active_group = trim((string) $selected_group);
+    if ($active_group === '') {
+        $active_group = trim((string) $student->group);
+    }
+
+    return $active_group !== ''
+        && tes_normalize_survey_group($active_group) === tes_normalize_survey_group($required_group);
+}
+
 function tes_clear_student_cookie($cookie_name) {
     setcookie($cookie_name, '', time() - HOUR_IN_SECONDS, COOKIEPATH ?: '/', COOKIE_DOMAIN, is_ssl(), true);
     unset($_COOKIE[$cookie_name]);
@@ -216,21 +264,22 @@ function tes_student_survey_shortcode() {
         array_unshift($phases, $current_student->phase);
     }
 
-    // 1. Fetch groups that currently have surveys available for this student's class and phase
+    // Only offer groups configured on active surveys for this student's cohort and batch.
     $survey_groups = [];
-    if ($current_student && !empty($current_student->class_name)) {
+    if ($current_student && !empty($current_student->class_name) && !empty($current_student->phase)) {
         $survey_groups = $wpdb->get_col($wpdb->prepare("
             SELECT DISTINCT TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) as grp
             FROM {$wpdb->prefix}tes_surveys s
             INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id
             WHERE (
-                LOWER(TRIM(t.class_name)) = LOWER(TRIM(%s))
-                OR REPLACE(REPLACE(REPLACE(LOWER(TRIM(t.class_name)), ' ', ''), '-', ''), '_', '') = REPLACE(REPLACE(REPLACE(LOWER(TRIM(%s)), ' ', ''), '-', ''), '_', '')
+                LOWER(REPLACE(REPLACE(REPLACE(TRIM(t.class_name), ' ', ''), '-', ''), '_', '')) = %s
             )
             AND (
-                LOWER(TRIM(t.phase)) = LOWER(TRIM(%s))
-                OR REPLACE(REPLACE(REPLACE(LOWER(TRIM(t.phase)), ' ', ''), '-', ''), '_', '') = REPLACE(REPLACE(REPLACE(LOWER(TRIM(%s)), ' ', ''), '-', ''), '_', '')
-                OR %s = ''
+                LOWER(REPLACE(REPLACE(REPLACE(TRIM(t.phase), ' ', ''), '-', ''), '_', '')) = %s
+            )
+            AND (
+                s.batch_name IS NULL OR TRIM(s.batch_name) = '' OR LOWER(TRIM(s.batch_name)) = 'all'
+                OR LOWER(REPLACE(REPLACE(REPLACE(TRIM(s.batch_name), ' ', ''), '-', ''), '_', '')) = %s
             )
             AND (s.status = 'active' OR s.status IS NULL OR s.status = '')
             AND EXISTS (SELECT 1 FROM {$wpdb->prefix}tes_questions WHERE survey_id = s.id)
@@ -238,32 +287,15 @@ function tes_student_survey_shortcode() {
             AND COALESCE(NULLIF(s.`group`, ''), t.`group`, '') != ''
             AND LOWER(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) != 'all'
             ORDER BY grp ASC
-        ", $current_student->class_name, $current_student->class_name, $current_student->phase, $current_student->phase, $current_student->phase));
+        ",
+            tes_normalize_survey_scope_value($current_student->class_name),
+            tes_normalize_survey_scope_value($current_student->phase),
+            tes_normalize_survey_scope_value($current_student->batch_name)
+        ));
     }
 
-    // 2. Also get all groups across students, teachers, and surveys
-    $all_groups = $wpdb->get_col("
-        SELECT DISTINCT `group` FROM (
-            SELECT `group` FROM {$wpdb->prefix}tes_students WHERE `group` IS NOT NULL AND `group` != ''
-            UNION
-            SELECT `group` FROM {$wpdb->prefix}tes_teachers WHERE `group` IS NOT NULL AND `group` != ''
-            UNION
-            SELECT `group` FROM {$wpdb->prefix}tes_surveys WHERE `group` IS NOT NULL AND `group` != '' AND `group` != 'all'
-        ) AS g ORDER BY `group` ASC
-    ");
-
-    // Put survey groups first so groups directly representing available surveys appear first
+    // Never expose groups that are not configured for this student's cohort.
     $groups = !empty($survey_groups) ? $survey_groups : [];
-    foreach ($all_groups as $ag) {
-        $clean_ag = trim($ag);
-        if ($clean_ag === '' || strcasecmp($clean_ag, 'all') === 0) continue;
-        if (!in_array($clean_ag, $groups)) {
-            $groups[] = $clean_ag;
-        }
-    }
-    if ($current_student && !empty($current_student->group) && !in_array($current_student->group, $groups)) {
-        array_unshift($groups, $current_student->group);
-    }
 
     // Deduplicate groups normalized (e.g. 'A' and 'Group A' represent the same group)
     $normalized_groups = [];
@@ -271,7 +303,7 @@ function tes_student_survey_shortcode() {
     foreach ($groups as $g) {
         $g_trim = trim($g);
         if ($g_trim === '' || strcasecmp($g_trim, 'all') === 0) continue;
-        $norm_key = strtolower(preg_replace('/^group[\s\-_]*/i', '', $g_trim));
+        $norm_key = tes_normalize_survey_group($g_trim);
         if (!isset($normalized_groups[$norm_key])) {
             $normalized_groups[$norm_key] = true;
             $deduped_groups[] = $g_trim;
@@ -279,14 +311,7 @@ function tes_student_survey_shortcode() {
     }
     $groups = $deduped_groups;
 
-    // Active selected group: if student has a profile group, use it;
-    // otherwise, default to the first group that has surveys available!
-    $active_selected_group = '';
-    if ($current_student && !empty($current_student->group)) {
-        $active_selected_group = $current_student->group;
-    } elseif (!empty($survey_groups)) {
-        $active_selected_group = $survey_groups[0];
-    }
+    $active_selected_group = !empty($survey_groups) ? $survey_groups[0] : '';
 
     ob_start();
 
@@ -484,7 +509,7 @@ function tes_student_survey_shortcode() {
                         <label for="tes_filter_group" style="font-weight: 600; font-size: 12px; color: #0f172a; margin-bottom: 4px; display: block;">Group <span style="font-size: 10px; color: #2563eb; font-weight: 700;">(Select)</span></label>
                         <select name="group" id="tes_filter_group" class="tes-group-select tes-survey-filter" style="width: 100%; padding: 8px; border: 1.5px solid #2563eb; border-radius: 6px; font-size: 13.5px; background: #fff; cursor: pointer; color: #0f172a; font-weight: 600;">
                             <?php if (empty($active_selected_group)): ?>
-                                <option value="">Select Group</option>
+                                <option value="">All Groups</option>
                             <?php endif; ?>
                             <?php foreach ($groups as $g): 
                                 $g_trimmed = trim($g);

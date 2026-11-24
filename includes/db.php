@@ -35,6 +35,7 @@ function tes_create_tables() {
         teacher_id INT NOT NULL,
         title VARCHAR(255) NOT NULL,
         `group` VARCHAR(100) NULL,
+        batch_name VARCHAR(100) NULL,
         status VARCHAR(20) DEFAULT 'active'
     ) $charset;";
 

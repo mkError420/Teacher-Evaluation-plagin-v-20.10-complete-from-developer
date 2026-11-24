@@ -6,6 +6,7 @@ function tes_surveys_page() {
 
     $teachers_table = $wpdb->prefix . 'tes_teachers';
     $surveys_table  = $wpdb->prefix . 'tes_surveys';
+    $students_table = $wpdb->prefix . 'tes_students';
 
     // Auto-assign questions to existing survey with 0 questions
     if (isset($_GET['auto_assign_questions'])) {
@@ -33,12 +34,14 @@ function tes_surveys_page() {
             }
         }
 
+        $survey_batch = isset($_POST['survey_batch']) ? sanitize_text_field(wp_unslash($_POST['survey_batch'])) : '';
         $survey_status = (isset($_POST['survey_status']) && $_POST['survey_status'] === 'paused') ? 'paused' : 'active';
 
         $data = [
             'title'        => sanitize_text_field(wp_unslash($_POST['survey_title'])),
             'teacher_id'   => intval($_POST['teacher_id']),
             'group'        => $survey_group,
+            'batch_name'   => $survey_batch,
             'status'       => $survey_status,
             'last_updated' => current_time('mysql')
         ];
@@ -105,6 +108,16 @@ function tes_surveys_page() {
     $teachers = $wpdb->get_results("SELECT * FROM $teachers_table WHERE (role != 'advisor' OR role IS NULL)");
     $phases = $wpdb->get_col("SELECT DISTINCT phase FROM $teachers_table WHERE phase != '' ORDER BY phase");
     $classes = $wpdb->get_col("SELECT DISTINCT class_name FROM $teachers_table WHERE class_name != '' ORDER BY class_name");
+    $batches = $wpdb->get_col("SELECT DISTINCT batch_name FROM $students_table WHERE batch_name IS NOT NULL AND batch_name != '' ORDER BY batch_name");
+    $edit_batch = '';
+    if (isset($_GET['edit_survey'])) {
+        $edit_batch = $wpdb->get_var($wpdb->prepare("SELECT batch_name FROM $surveys_table WHERE id = %d", intval($_GET['edit_survey'])));
+    }
+    if (!empty($edit_batch)) {
+        if (!in_array($edit_batch, $batches, true)) {
+            array_unshift($batches, $edit_batch);
+        }
+    }
     $groups = $wpdb->get_col("
         SELECT DISTINCT `group` FROM (
             SELECT `group` FROM {$wpdb->prefix}tes_students WHERE `group` IS NOT NULL AND `group` != ''
@@ -123,7 +136,7 @@ function tes_surveys_page() {
 
     if (!empty($search_term)) {
         $like = '%' . $wpdb->esc_like($search_term) . '%';
-        $surveys_query .= $wpdb->prepare(" WHERE s.title LIKE %s OR t.name LIKE %s OR t.phase LIKE %s OR t.class_name LIKE %s OR s.`group` LIKE %s OR t.`group` LIKE %s", $like, $like, $like, $like, $like, $like);
+        $surveys_query .= $wpdb->prepare(" WHERE s.title LIKE %s OR t.name LIKE %s OR t.phase LIKE %s OR t.class_name LIKE %s OR s.`group` LIKE %s OR t.`group` LIKE %s OR s.batch_name LIKE %s", $like, $like, $like, $like, $like, $like, $like);
     }
 
     $surveys_query .= " ORDER BY s.id DESC";
@@ -200,6 +213,15 @@ function tes_surveys_page() {
                    placeholder="Enter new group"
                    style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; display: none; width: 130px; margin-right: 5px;">
 
+            <select name="survey_batch" id="tes_survey_batch_select" style="margin-right: 5px; min-width: 140px;">
+                <option value="">All Batches</option>
+                <?php foreach ($batches as $batch): ?>
+                    <option value="<?php echo esc_attr($batch); ?>" <?php selected($edit_survey ? ($edit_survey->batch_name ?? '') : '', $batch); ?>>
+                        Batch: <?php echo esc_html($batch); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+
             <select name="survey_status" id="tes_survey_status_select" style="margin-right: 5px; min-width: 125px;">
                 <option value="active" <?php selected($edit_survey ? ($edit_survey->status ?? 'active') : 'active', 'active'); ?>>Status: Active</option>
                 <option value="paused" <?php selected($edit_survey ? ($edit_survey->status ?? 'active') : 'active', 'paused'); ?>>Status: Paused</option>
@@ -220,7 +242,7 @@ function tes_surveys_page() {
         <form method="get" style="margin-bottom: 15px;">
             <input type="hidden" name="page" value="tes-surveys">
             <div style="position: relative; display: inline-block; width: 320px;">
-                <input type="text" name="s" id="tes_survey_search_input" value="<?php echo esc_attr($search_term); ?>" placeholder="Search by Survey, Teacher, Phase, Class or Group" style="width: 100%;" autocomplete="off">
+                <input type="text" name="s" id="tes_survey_search_input" value="<?php echo esc_attr($search_term); ?>" placeholder="Search by Survey, Teacher, Phase, Class, Group or Batch" style="width: 100%;" autocomplete="off">
                 <div id="tes_survey_search_suggestions" style="display:none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccd0d4; z-index: 1000; max-height: 300px; overflow-y: auto; box-shadow: 0 4px 5px rgba(0,0,0,0.1);"></div>
             </div>
             <button type="submit" class="button button-secondary">Search</button>
@@ -247,6 +269,7 @@ function tes_surveys_page() {
                     <th>Phase</th>
                     <th>Class</th>
                     <th>Group</th>
+                    <th>Batch</th>
                     <th>Status</th>
                     <th>Questions</th>
                     <th>Date</th>
@@ -272,6 +295,7 @@ function tes_surveys_page() {
                             }
                             ?>
                         </td>
+                        <td><?php echo !empty($s->batch_name) ? esc_html($s->batch_name) : '<span style="color:#64748b; font-size:12px;">All Batches</span>'; ?></td>
                         <td>
                             <?php 
                             $s_status = (!empty($s->status) && $s->status === 'paused') ? 'paused' : 'active';

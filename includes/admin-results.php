@@ -20,6 +20,15 @@ function tes_results_page() {
     }
     $query .= " ORDER BY s.id DESC";
     $surveys = $wpdb->get_results($query);
+    $survey_list_per_page = 15;
+    $survey_list_total = count($surveys);
+    $survey_list_total_pages = max(1, (int) ceil($survey_list_total / $survey_list_per_page));
+    $survey_list_page = isset($_GET['survey_page']) ? max(1, absint($_GET['survey_page'])) : 1;
+    $survey_list_page = min($survey_list_page, $survey_list_total_pages);
+    $survey_list_offset = ($survey_list_page - 1) * $survey_list_per_page;
+    $surveys_for_list = array_slice($surveys, $survey_list_offset, $survey_list_per_page);
+    $survey_list_first = $survey_list_total > 0 ? $survey_list_offset + 1 : 0;
+    $survey_list_last = min($survey_list_offset + $survey_list_per_page, $survey_list_total);
 
     // Get all teachers for filter
     $teachers = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}tes_teachers WHERE (role != 'advisor' OR role IS NULL) ORDER BY name ASC");
@@ -658,6 +667,10 @@ function tes_results_page() {
                         <?php echo count($surveys); ?> Surveys
                     </span>
                 </div>
+                <div style="padding: 10px 22px; color: #64748b; font-size: 13px; border-bottom: 1px solid #f1f5f9;">
+                    Showing <?php echo esc_html($survey_list_first); ?>–<?php echo esc_html($survey_list_last); ?>
+                    of <?php echo esc_html($survey_list_total); ?> surveys (<?php echo esc_html($survey_list_per_page); ?> per page)
+                </div>
 
                 <div style="overflow-x: auto;">
                     <table class="tes-table" style="width: 100%; border-collapse: collapse; font-size: 13.5px; text-align: left;">
@@ -674,7 +687,7 @@ function tes_results_page() {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if ($surveys): foreach ($surveys as $survey): 
+                            <?php if ($surveys_for_list): foreach ($surveys_for_list as $survey):
                                 // Calculate Score for List View
                                 $survey_questions = $wpdb->get_results($wpdb->prepare("SELECT * FROM $questions_table WHERE survey_id = %d", $survey->id));
                                 
@@ -813,6 +826,46 @@ function tes_results_page() {
                         </tbody>
                     </table>
                 </div>
+
+                <?php if ($survey_list_total_pages > 1): ?>
+                    <?php
+                    $pagination_start = max(1, $survey_list_page - 2);
+                    $pagination_end = min($survey_list_total_pages, $survey_list_page + 2);
+                    $survey_page_url = function ($page_number) use ($search_term) {
+                        $args = [
+                            'page' => 'tes-dashboard',
+                            'survey_page' => $page_number
+                        ];
+                        if ($search_term !== '') {
+                            $args['s'] = $search_term;
+                        }
+                        return add_query_arg($args, admin_url('admin.php'));
+                    };
+                    ?>
+                    <nav aria-label="Survey list pages" style="display: flex; justify-content: center; align-items: center; gap: 6px; padding: 16px; border-top: 1px solid #f1f5f9;">
+                        <?php if ($survey_list_page > 1): ?>
+                            <a class="button" href="<?php echo esc_url($survey_page_url($survey_list_page - 1)); ?>">Previous</a>
+                        <?php endif; ?>
+                        <?php if ($pagination_start > 1): ?>
+                            <a class="button" href="<?php echo esc_url($survey_page_url(1)); ?>">1</a>
+                            <?php if ($pagination_start > 2): ?><span aria-hidden="true">…</span><?php endif; ?>
+                        <?php endif; ?>
+                        <?php for ($page_number = $pagination_start; $page_number <= $pagination_end; $page_number++): ?>
+                            <?php if ($page_number === $survey_list_page): ?>
+                                <span aria-current="page" class="button button-primary"><?php echo esc_html($page_number); ?></span>
+                            <?php else: ?>
+                                <a class="button" href="<?php echo esc_url($survey_page_url($page_number)); ?>"><?php echo esc_html($page_number); ?></a>
+                            <?php endif; ?>
+                        <?php endfor; ?>
+                        <?php if ($pagination_end < $survey_list_total_pages): ?>
+                            <?php if ($pagination_end < $survey_list_total_pages - 1): ?><span aria-hidden="true">…</span><?php endif; ?>
+                            <a class="button" href="<?php echo esc_url($survey_page_url($survey_list_total_pages)); ?>"><?php echo esc_html($survey_list_total_pages); ?></a>
+                        <?php endif; ?>
+                        <?php if ($survey_list_page < $survey_list_total_pages): ?>
+                            <a class="button" href="<?php echo esc_url($survey_page_url($survey_list_page + 1)); ?>">Next</a>
+                        <?php endif; ?>
+                    </nav>
+                <?php endif; ?>
             </div>
 
         <?php endif; ?>
