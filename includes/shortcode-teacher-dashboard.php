@@ -293,7 +293,7 @@ function tes_teacher_dashboard_shortcode() {
                                 $fixed_q->question_type = 'Implicit Issues';
                                 $fixed_q->question_text = 'How well does the teacher model the core values through how he/she behaves with students and with other staff persons?';
                                 $fixed_q->sub_question_title = 'I follow the teacher as my role model ';
-                                $fixed_q->options = 'To much extent,All Most,Yes  ';
+                                $fixed_q->options = 'Too much extent,All Most,Yes  ';
                                 if (!$survey_questions) $survey_questions = [];
                                 $survey_questions[] = $fixed_q;
 
@@ -321,6 +321,7 @@ function tes_teacher_dashboard_shortcode() {
 
                                         foreach ($answers as $q_id => $answer) {
                                             if (!isset($questions_map[$q_id])) continue;
+                                            if ((string) $q_id === 'fixed_implicit_role_model') continue;
                                             
                                             $value = 0;
                                             if (isset($score_map[$answer])) {
@@ -460,7 +461,7 @@ function tes_teacher_dashboard_shortcode() {
                 $fixed_question->question_type = 'Implicit Issues';
                 $fixed_question->question_text = 'How well does the teacher model the core values through how he/she behaves with students and with other staff persons?';
                 $fixed_question->sub_question_title = 'I follow the teacher as my role model ';
-                $fixed_question->options = 'To much extent,All Most,Yes  ';
+                $fixed_question->options = 'Too much extent,All Most,Yes  ';
                 if (!$all_questions) $all_questions = [];
                 $all_questions[] = $fixed_question;
 
@@ -511,6 +512,8 @@ function tes_teacher_dashboard_shortcode() {
                             if (!isset($answer_counts[$q_id])) $answer_counts[$q_id] = [];
                             if (!isset($answer_counts[$q_id][$answer])) $answer_counts[$q_id][$answer] = 0;
                             $answer_counts[$q_id][$answer]++;
+
+                            if ((string) $q_id === 'fixed_implicit_role_model') continue;
 
                             $value = 0;
                             if (isset($score_map[$answer])) {

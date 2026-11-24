@@ -267,7 +267,7 @@ function tes_load_questions() {
     $fixed_question->question_type = 'Implicit Issues';
     $fixed_question->question_text = 'How well does the teacher model the core values through how he/she behaves with students and with other staff persons?';
     $fixed_question->sub_question_title = 'I follow the teacher as my role model ';
-    $fixed_question->options = 'To much extent,All Most,Yes  ';
+    $fixed_question->options = 'Too much extent,All Most,Yes  ';
     $questions[] = $fixed_question;
 
     wp_send_json_success($questions);

@@ -260,7 +260,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                 $fixed_question->question_type = 'Implicit Issues';
                                 $fixed_question->question_text = 'How well does the teacher model the core values through how he/she behaves with students and with other staff persons?';
                                 $fixed_question->sub_question_title = 'I follow the teacher as my role model ';
-                                $fixed_question->options = 'To much extent,All Most,Yes  ';
+                                $fixed_question->options = 'Too much extent,All Most,Yes  ';
                                 if (!$survey_questions) $survey_questions = [];
                                 $survey_questions[] = $fixed_question;
 
@@ -287,6 +287,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
 
                                         foreach ($answers as $q_id => $answer) {
                                             if (!isset($questions_map[$q_id])) continue;
+                                            if ((string) $q_id === 'fixed_implicit_role_model') continue;
                                             
                                             $value = 0;
                                             if (isset($score_map[$answer])) {
@@ -413,7 +414,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                 $fixed_question->question_type = 'Implicit Issues';
                 $fixed_question->question_text = 'How well does the teacher model the core values through how he/she behaves with students and with other staff persons?';
                 $fixed_question->sub_question_title = 'I follow the teacher as my role model ';
-                $fixed_question->options = 'To much extent,All Most,Yes  ';
+                $fixed_question->options = 'Too much extent,All Most,Yes  ';
                 if (!$all_questions) $all_questions = [];
                 $all_questions[] = $fixed_question;
 
@@ -473,14 +474,16 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                 if (!isset($answer_counts[$q_id][$q_ans])) $answer_counts[$q_id][$q_ans] = 0;
                                 $answer_counts[$q_id][$q_ans]++;
 
-                                if (isset($score_map[$q_ans])) {
-                                    $value = $score_map[$q_ans];
-                                } else {
-                                    $q_options = array_map('trim', explode(',', $q->options));
-                                    $num_options = count($q_options);
-                                    $index = array_search($q_ans, $q_options);
-                                    if ($index !== false && $num_options > 0) {
-                                        $value = (($num_options - $index) / $num_options) * 5;
+                                if ((string) $q_id !== 'fixed_implicit_role_model') {
+                                    if (isset($score_map[$q_ans])) {
+                                        $value = $score_map[$q_ans];
+                                    } else {
+                                        $q_options = array_map('trim', explode(',', $q->options));
+                                        $num_options = count($q_options);
+                                        $index = array_search($q_ans, $q_options);
+                                        if ($index !== false && $num_options > 0) {
+                                            $value = (($num_options - $index) / $num_options) * 5;
+                                        }
                                     }
                                 }
                                 if ($value > 0) {
@@ -500,7 +503,7 @@ function tes_render_advisor_dashboard_content($current_advisor, $logout_url) {
                                 'title'  => !empty($q->sub_question_title) ? $q->sub_question_title : $q->question_text,
                                 'text'   => $q->question_text,
                                 'answer' => $q_ans,
-                                'score'  => $value > 0 ? number_format($value, 1) : null
+                                'score'  => (string) $q_id !== 'fixed_implicit_role_model' && $value > 0 ? number_format($value, 1) : null
                             ];
                         }
 
