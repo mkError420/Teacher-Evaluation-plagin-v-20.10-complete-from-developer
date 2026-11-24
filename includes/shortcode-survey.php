@@ -223,15 +223,22 @@ function tes_student_survey_shortcode() {
             SELECT DISTINCT TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) as grp
             FROM {$wpdb->prefix}tes_surveys s
             INNER JOIN {$wpdb->prefix}tes_teachers t ON s.teacher_id = t.id
-            WHERE LOWER(TRIM(t.class_name)) = LOWER(TRIM(%s))
-              AND (LOWER(TRIM(t.phase)) = LOWER(TRIM(%s)) OR %s = '')
-              AND (s.status = 'active' OR s.status IS NULL OR s.status = '')
-              AND EXISTS (SELECT 1 FROM {$wpdb->prefix}tes_questions WHERE survey_id = s.id)
-              AND COALESCE(NULLIF(s.`group`, ''), t.`group`, '') IS NOT NULL
-              AND COALESCE(NULLIF(s.`group`, ''), t.`group`, '') != ''
-              AND LOWER(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) != 'all'
+            WHERE (
+                LOWER(TRIM(t.class_name)) = LOWER(TRIM(%s))
+                OR REPLACE(REPLACE(REPLACE(LOWER(TRIM(t.class_name)), ' ', ''), '-', ''), '_', '') = REPLACE(REPLACE(REPLACE(LOWER(TRIM(%s)), ' ', ''), '-', ''), '_', '')
+            )
+            AND (
+                LOWER(TRIM(t.phase)) = LOWER(TRIM(%s))
+                OR REPLACE(REPLACE(REPLACE(LOWER(TRIM(t.phase)), ' ', ''), '-', ''), '_', '') = REPLACE(REPLACE(REPLACE(LOWER(TRIM(%s)), ' ', ''), '-', ''), '_', '')
+                OR %s = ''
+            )
+            AND (s.status = 'active' OR s.status IS NULL OR s.status = '')
+            AND EXISTS (SELECT 1 FROM {$wpdb->prefix}tes_questions WHERE survey_id = s.id)
+            AND COALESCE(NULLIF(s.`group`, ''), t.`group`, '') IS NOT NULL
+            AND COALESCE(NULLIF(s.`group`, ''), t.`group`, '') != ''
+            AND LOWER(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) != 'all'
             ORDER BY grp ASC
-        ", $current_student->class_name, $current_student->phase, $current_student->phase));
+        ", $current_student->class_name, $current_student->class_name, $current_student->phase, $current_student->phase, $current_student->phase));
     }
 
     // 2. Also get all groups across students, teachers, and surveys
@@ -257,6 +264,20 @@ function tes_student_survey_shortcode() {
     if ($current_student && !empty($current_student->group) && !in_array($current_student->group, $groups)) {
         array_unshift($groups, $current_student->group);
     }
+
+    // Deduplicate groups normalized (e.g. 'A' and 'Group A' represent the same group)
+    $normalized_groups = [];
+    $deduped_groups = [];
+    foreach ($groups as $g) {
+        $g_trim = trim($g);
+        if ($g_trim === '' || strcasecmp($g_trim, 'all') === 0) continue;
+        $norm_key = strtolower(preg_replace('/^group[\s\-_]*/i', '', $g_trim));
+        if (!isset($normalized_groups[$norm_key])) {
+            $normalized_groups[$norm_key] = true;
+            $deduped_groups[] = $g_trim;
+        }
+    }
+    $groups = $deduped_groups;
 
     // Active selected group: if student has a profile group, use it;
     // otherwise, default to the first group that has surveys available!
@@ -469,8 +490,12 @@ function tes_student_survey_shortcode() {
                                 $g_trimmed = trim($g);
                                 if ($g_trimmed === '' || strcasecmp($g_trimmed, 'all') === 0) continue;
                                 $display_text = (stripos($g_trimmed, 'group') === 0) ? $g_trimmed : 'Group ' . $g_trimmed;
+                                $is_selected = (
+                                    strcasecmp($active_selected_group, $g_trimmed) === 0
+                                    || strcasecmp(preg_replace('/^group[\s\-_]*/i', '', $active_selected_group), preg_replace('/^group[\s\-_]*/i', '', $g_trimmed)) === 0
+                                );
                             ?>
-                                <option value="<?php echo esc_attr($g_trimmed); ?>" <?php selected($active_selected_group, $g_trimmed); ?>><?php echo esc_html($display_text); ?></option>
+                                <option value="<?php echo esc_attr($g_trimmed); ?>" <?php if ($is_selected) echo 'selected'; ?>><?php echo esc_html($display_text); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>

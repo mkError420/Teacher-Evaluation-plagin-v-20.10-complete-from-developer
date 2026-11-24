@@ -234,10 +234,12 @@ function tes_load_questions() {
                 $student_group = $wpdb->get_var($wpdb->prepare("SELECT `group` FROM {$wpdb->prefix}tes_students WHERE id = %d", $student_id));
             }
             $active_group = !empty($selected_group) ? trim($selected_group) : trim((string)$student_group);
-            $clean_req = strtolower(trim(preg_replace('/^group\s*/i', '', $required_group)));
-            $clean_act = strtolower(trim(preg_replace('/^group\s*/i', '', $active_group)));
+            $clean_req = strtolower(trim(preg_replace('/^group[\s\-_]*/i', '', $required_group)));
+            $clean_act = strtolower(trim(preg_replace('/^group[\s\-_]*/i', '', $active_group)));
+            $norm_req  = strtolower(preg_replace('/[\s\-_]/', '', $required_group));
+            $norm_act  = strtolower(preg_replace('/[\s\-_]/', '', $active_group));
 
-            if (empty($active_group) || ($clean_req !== $clean_act && strcasecmp($required_group, $active_group) !== 0)) {
+            if (empty($active_group) || ($clean_req !== $clean_act && $norm_req !== $norm_act && strcasecmp($required_group, $active_group) !== 0)) {
                 wp_send_json_error('Access restricted: This survey is only accessible to students of ' . esc_html($required_group) . '.');
             }
         }
@@ -321,40 +323,59 @@ function tes_load_surveys_by_class() {
         $params[] = $student_name;
     }
     
-    $query .= " WHERE LOWER(TRIM(t.class_name)) = LOWER(TRIM(%s)) 
+    $query .= " WHERE (
+                    LOWER(TRIM(t.class_name)) = LOWER(TRIM(%s)) 
+                    OR REPLACE(REPLACE(REPLACE(LOWER(TRIM(t.class_name)), ' ', ''), '-', ''), '_', '') = REPLACE(REPLACE(REPLACE(LOWER(TRIM(%s)), ' ', ''), '-', ''), '_', '')
+                )
                 AND (s.status = 'active' OR s.status IS NULL OR s.status = '')
                 AND EXISTS (SELECT 1 FROM {$wpdb->prefix}tes_questions WHERE survey_id = s.id)
-                AND sub.id IS NULL";
+                AND (sub.id IS NULL OR (s.last_updated IS NOT NULL AND sub.submission_date < s.last_updated))";
+    $params[] = $class_name;
     $params[] = $class_name;
 
     if (!empty($phase)) {
-        $query .= " AND (LOWER(TRIM(t.phase)) = LOWER(TRIM(%s)) OR %s = '')";
+        $query .= " AND (
+            LOWER(TRIM(t.phase)) = LOWER(TRIM(%s))
+            OR REPLACE(REPLACE(REPLACE(LOWER(TRIM(t.phase)), ' ', ''), '-', ''), '_', '') = REPLACE(REPLACE(REPLACE(LOWER(TRIM(%s)), ' ', ''), '-', ''), '_', '')
+            OR %s = ''
+        )";
+        $params[] = $phase;
         $params[] = $phase;
         $params[] = $phase;
     }
 
     // Group filtering: ONLY surveys under the selected group will be visible; other surveys will NOT show.
     if (!empty($group)) {
-        $clean_group = trim(preg_replace('/^group\s*/i', '', $group));
+        $group_raw = trim($group);
+        $clean_group = trim(preg_replace('/^group[\s\-_]*/i', '', $group_raw));
+        $norm_group = strtolower(preg_replace('/[\s\-_]/', '', $group_raw));
+        $norm_clean = strtolower(preg_replace('/[\s\-_]/', '', $clean_group));
+
+        $grp_sql = "COALESCE(NULLIF(TRIM(s.`group`), ''), NULLIF(TRIM(t.`group`), ''), '')";
+        $norm_grp_sql = "REPLACE(REPLACE(REPLACE(LOWER(" . $grp_sql . "), ' ', ''), '-', ''), '_', '')";
+
         $query .= " AND (
-            TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = %s
-            OR TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = %s
-            OR TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = %s
-            OR LOWER(TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, ''))) = LOWER(%s)
-            OR LOWER(TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, ''))) = LOWER(%s)
-            OR TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = ''
-            OR LOWER(TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, ''))) = 'all'
+            LOWER(TRIM(" . $grp_sql . ")) = LOWER(%s)
+            OR LOWER(TRIM(" . $grp_sql . ")) = LOWER(%s)
+            OR LOWER(TRIM(" . $grp_sql . ")) = LOWER(%s)
+            OR " . $norm_grp_sql . " = %s
+            OR " . $norm_grp_sql . " = %s
+            OR " . $norm_grp_sql . " = CONCAT('group', %s)
+            OR REPLACE(" . $norm_grp_sql . ", 'group', '') = %s
         )";
-        $params[] = $group;
+        $params[] = $group_raw;
         $params[] = $clean_group;
         $params[] = 'Group ' . $clean_group;
-        $params[] = $clean_group;
-        $params[] = 'Group ' . $clean_group;
+        $params[] = $norm_group;
+        $params[] = $norm_clean;
+        $params[] = $norm_clean;
+        $params[] = $norm_clean;
     } else {
         // If no group is selected from "Group (Select)", show surveys open to all
+        $grp_sql = "COALESCE(NULLIF(TRIM(s.`group`), ''), NULLIF(TRIM(t.`group`), ''), '')";
         $query .= " AND (
-            TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, '')) = ''
-            OR LOWER(TRIM(COALESCE(NULLIF(s.`group`, ''), t.`group`, ''))) = 'all'
+            " . $grp_sql . " = ''
+            OR LOWER(" . $grp_sql . ") = 'all'
         )";
     }
 
@@ -658,9 +679,11 @@ function tes_submit_survey() {
 
         if (!empty($required_group) && strcasecmp($required_group, 'all') !== 0) {
             $active_group = !empty($submitted_group) ? trim($submitted_group) : trim((string)$student_grp);
-            $clean_req = strtolower(trim(preg_replace('/^group\s*/i', '', $required_group)));
-            $clean_act = strtolower(trim(preg_replace('/^group\s*/i', '', $active_group)));
-            if (empty($active_group) || ($clean_req !== $clean_act && strcasecmp($required_group, $active_group) !== 0)) {
+            $clean_req = strtolower(trim(preg_replace('/^group[\s\-_]*/i', '', $required_group)));
+            $clean_act = strtolower(trim(preg_replace('/^group[\s\-_]*/i', '', $active_group)));
+            $norm_req  = strtolower(preg_replace('/[\s\-_]/', '', $required_group));
+            $norm_act  = strtolower(preg_replace('/[\s\-_]/', '', $active_group));
+            if (empty($active_group) || ($clean_req !== $clean_act && $norm_req !== $norm_act && strcasecmp($required_group, $active_group) !== 0)) {
                 wp_send_json_error('This survey is only accessible to students of ' . esc_html($required_group) . '.');
             }
         }

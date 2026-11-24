@@ -36,10 +36,11 @@ function tes_surveys_page() {
         $survey_status = (isset($_POST['survey_status']) && $_POST['survey_status'] === 'paused') ? 'paused' : 'active';
 
         $data = [
-            'title'      => sanitize_text_field(wp_unslash($_POST['survey_title'])),
-            'teacher_id' => intval($_POST['teacher_id']),
-            'group'      => $survey_group,
-            'status'     => $survey_status
+            'title'        => sanitize_text_field(wp_unslash($_POST['survey_title'])),
+            'teacher_id'   => intval($_POST['teacher_id']),
+            'group'        => $survey_group,
+            'status'       => $survey_status,
+            'last_updated' => current_time('mysql')
         ];
         if (!empty($_POST['survey_id'])) {
             $wpdb->update($surveys_table, $data, ['id' => intval($_POST['survey_id'])]);
@@ -71,7 +72,10 @@ function tes_surveys_page() {
         $toggle_id = intval($_GET['tes_toggle_status']);
         $new_status = sanitize_text_field($_GET['new_status']) === 'paused' ? 'paused' : 'active';
         if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'tes_toggle_survey_' . $toggle_id)) {
-            $wpdb->update($surveys_table, ['status' => $new_status], ['id' => $toggle_id]);
+            $wpdb->update($surveys_table, [
+                'status'       => $new_status,
+                'last_updated' => current_time('mysql')
+            ], ['id' => $toggle_id]);
             $status_label = ($new_status === 'active') ? 'activated' : 'paused';
             echo '<div class="updated notice is-dismissible"><p>Survey #' . esc_html($toggle_id) . ' successfully ' . esc_html($status_label) . '.</p></div>';
         }
@@ -86,10 +90,10 @@ function tes_surveys_page() {
                 $wpdb->query("DELETE FROM $surveys_table WHERE id IN ($ids_string)");
                 echo '<div class="updated notice is-dismissible"><p>' . count($ids) . ' surveys deleted successfully.</p></div>';
             } elseif (isset($_POST['tes_bulk_pause_surveys'])) {
-                $wpdb->query("UPDATE $surveys_table SET status = 'paused' WHERE id IN ($ids_string)");
+                $wpdb->query("UPDATE $surveys_table SET status = 'paused', last_updated = NOW() WHERE id IN ($ids_string)");
                 echo '<div class="updated notice is-dismissible"><p>' . count($ids) . ' surveys paused successfully.</p></div>';
             } elseif (isset($_POST['tes_bulk_activate_surveys'])) {
-                $wpdb->query("UPDATE $surveys_table SET status = 'active' WHERE id IN ($ids_string)");
+                $wpdb->query("UPDATE $surveys_table SET status = 'active', last_updated = NOW() WHERE id IN ($ids_string)");
                 echo '<div class="updated notice is-dismissible"><p>' . count($ids) . ' surveys activated successfully.</p></div>';
             }
         }
